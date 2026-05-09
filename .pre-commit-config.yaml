@@ -1,0 +1,77 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for available hooks
+
+# =============================================================================
+# NoviSentinel — Pre-commit Configuration
+#
+# Install:
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit install --hook-type commit-msg
+#   pre-commit install --hook-type pre-push
+# =============================================================================
+
+repos:
+  # ── General file hygiene ──────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-json
+        exclude: ^NoviSentinel\.postman_collection\.json$
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: check-merge-conflict
+      - id: debug-statements
+      - id: check-case-conflict
+
+  # ── Block secrets and credentials ─────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: detect-private-key
+
+  # ── Block .env files from being committed ─────────────────────────────
+  - repo: local
+    hooks:
+      - id: no-env-files
+        name: Block .env files
+        entry: bash -c 'echo "ERROR: .env files must not be committed. Use .env.example instead." && exit 1'
+        language: system
+        files: '\.env$'
+        exclude: '\.env\.example$|\.env\.local\.example$'
+
+  # ── Python linting (Ruff — fast, replaces flake8 + isort + pyflakes) ──
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        types_or: [python, pyi]
+      - id: ruff-format
+        types_or: [python, pyi]
+
+  # ── Commit message validation ─────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: commit-msg-convention
+        name: Validate commit message (NoviSentinel convention)
+        entry: python scripts/validate_commit_msg.py
+        language: python
+        stages: [commit-msg]
+        always_run: true
+
+  # ── Pre-push — run test suite ─────────────────────────────────────────
+  - repo: local
+    hooks:
+      - id: run-tests
+        name: Run test suite
+        entry: python -m pytest tests/ -v --tb=short -q
+        language: system
+        stages: [pre-push]
+        always_run: true
+        pass_filenames: false

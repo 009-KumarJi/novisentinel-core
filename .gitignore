@@ -1,0 +1,94 @@
+# ========================
+# Environment & Secrets
+# ========================
+.env
+.env.local
+.env.*.local
+.env.production
+.env.staging
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.py[cod]
+*.pyc
+*.pyo
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+.venv/
+venv/
+env/
+.python-version
+pip-log.txt
+
+# ========================
+# Testing & Coverage
+# ========================
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+
+# ========================
+# Node.js / Dashboard
+# ========================
+node_modules/
+.next/
+out/
+next-env.d.ts
+.turbo/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# ========================
+# IDEs & Editors
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================
+# AI Tools & Assistants
+# ========================
+.gemini/
+.cursor/
+.copilot/
+.codeium/
+.aider*
+.windsurf/
+.tabnine/
+.sourcery.yaml
+
+# ========================
+# ML / HuggingFace Cache
+# ========================
+.cache/
+models/
+
+# ========================
+# Logs & Temp
+# ========================
+*.log
+tmp/
+temp/
+
+# ========================
+# Plans (dev-only)
+# ========================
+plans/
+
+# ========================
+# Docker (optional local)
+# ========================
+docker-compose.override.yml

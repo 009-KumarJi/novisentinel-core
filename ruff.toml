@@ -1,0 +1,40 @@
+# =============================================================================
+# Ruff — Python Linter & Formatter
+# https://docs.astral.sh/ruff/
+# =============================================================================
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes
+    "I",    # isort (import sorting)
+    "UP",   # pyupgrade (modern Python syntax)
+    "B",    # flake8-bugbear (common bugs)
+    "S",    # flake8-bandit (security)
+    "T20",  # flake8-print (no print statements)
+    "SIM",  # flake8-simplify
+    "RUF",  # ruff-specific rules
+]
+ignore = [
+    "S101",   # allow assert in tests
+    "T201",   # allow print in scripts
+    "E501",   # line length handled by formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = [
+    "S101",   # assert is fine in tests
+    "S105",   # hardcoded passwords in test fixtures
+    "S106",   # hardcoded passwords in test arguments
+]
+"scripts/**/*.py" = [
+    "T201",   # print is fine in scripts
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
