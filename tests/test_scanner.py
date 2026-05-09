@@ -1,17 +1,23 @@
+from unittest.mock import AsyncMock, patch
+
 import pytest
-from unittest.mock import patch, AsyncMock
-from app.core.scanner import (
-    scan, _determine_risk, _determine_action, _build_redacted_text
-)
+
+from app.core.scanner import _build_redacted_text, _determine_action, _determine_risk, scan
 from app.detectors.base import DetectionResult
 
 
-def _make_detection(detector="pii", type="EMAIL_ADDRESS", text="x@x.com",
-                    start=0, end=7, confidence=0.99, severity="high"):
+def _make_detection(
+    detector="pii", type="EMAIL_ADDRESS", text="x@x.com", start=0, end=7, confidence=0.99, severity="high"
+):
     return DetectionResult(
-        detector=detector, type=type, text=text,
-        redacted=f"[{type}]", start=start, end=end,
-        confidence=confidence, severity=severity
+        detector=detector,
+        type=type,
+        text=text,
+        redacted=f"[{type}]",
+        start=start,
+        end=end,
+        confidence=confidence,
+        severity=severity,
     )
 
 

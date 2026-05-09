@@ -1,20 +1,21 @@
 from fastapi import Depends, Header, HTTPException, Security
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from redis.asyncio import Redis
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.session import get_db
-from app.db.models import ApiKey
-from app.core.auth import hash_key, _master_key_uuid
-from app.core.rate_limit import check_rate_limit
 from app.config import settings
+from app.core.auth import _master_key_uuid, hash_key
+from app.core.rate_limit import check_rate_limit
+from app.db.models import ApiKey
+from app.db.session import get_db
 
 bearer_scheme = HTTPBearer()
 
 
 async def get_redis() -> Redis:
     from app.main import redis_client
+
     return redis_client
 
 
@@ -34,9 +35,7 @@ async def get_current_key(
         return master_row
 
     key_hash = hash_key(token)
-    result = await db.execute(
-        select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active == True)
-    )
+    result = await db.execute(select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active == True))
     api_key = result.scalar_one_or_none()
     if not api_key:
         raise HTTPException(status_code=401, detail="Invalid or revoked API key")

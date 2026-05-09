@@ -1,19 +1,20 @@
 """
 Webhook API tests — dependency-overridden, no real DB required.
 """
+
 import hashlib
 import hmac
-import json
 import uuid
-import pytest
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock, patch
-from httpx import AsyncClient, ASGITransport
-from fastapi import FastAPI
+from unittest.mock import AsyncMock, MagicMock
 
-from app.db.models import ApiKey, WebhookConfig
-from app.dependencies import get_db, get_redis, get_current_key
+import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
 from app.api import webhooks
+from app.db.models import ApiKey, WebhookConfig
+from app.dependencies import get_current_key, get_db, get_redis
 
 
 def _make_test_app(api_key=None):
@@ -97,7 +98,6 @@ async def test_create_webhook_returns_secret():
 async def test_delete_webhook_not_found():
     test_app = _make_test_app(api_key=_fake_key())
 
-    from sqlalchemy.engine import CursorResult
     mock_result = MagicMock()
     mock_result.rowcount = 0
 
@@ -120,11 +120,10 @@ async def test_delete_webhook_not_found():
 def test_hmac_signature_correct():
     """Verify the signing logic produces a valid HMAC-SHA256 signature."""
     from app.core.webhook import _sign
+
     secret = "testsecret"
     payload = b'{"event":"detection.block"}'
     sig = _sign(secret, payload)
     assert sig.startswith("sha256=")
-    expected = "sha256=" + hmac.new(
-        secret.encode(), payload, hashlib.sha256
-    ).hexdigest()
+    expected = "sha256=" + hmac.new(secret.encode(), payload, hashlib.sha256).hexdigest()
     assert sig == expected

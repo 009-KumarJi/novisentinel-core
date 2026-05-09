@@ -1,10 +1,10 @@
 import time
 import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from app.detectors.base import DetectionResult
-from app.detectors.pii import PIIDetector, CRITICAL_ENTITIES, HIGH_ENTITIES
 from app.detectors.injection import InjectionDetector
+from app.detectors.pii import CRITICAL_ENTITIES, PIIDetector
 from app.detectors.secrets import SecretsDetector
 from app.detectors.toxicity import ToxicityDetector
 
@@ -18,8 +18,8 @@ _toxicity = ToxicityDetector()
 class ScanResult:
     scan_id: str
     safe: bool
-    risk_level: str        # none / low / medium / high / critical
-    action: str            # allow / warn / redact / block
+    risk_level: str  # none / low / medium / high / critical
+    action: str  # allow / warn / redact / block
     detections: list[DetectionResult]
     redacted_text: str
     original_length: int
@@ -41,6 +41,7 @@ async def scan(text: str, context: str | None, config: dict) -> ScanResult:
     scan_id = str(uuid.uuid4())
 
     import asyncio
+
     pii_results = _pii.scan(text, config)
     secrets_results = _secrets.scan(text, config)
     injection_results, toxicity_results = await asyncio.gather(
@@ -138,7 +139,7 @@ def _build_redacted_text(text: str, detections: list[DetectionResult]) -> str:
         span = set(range(d.start, d.end))
         if span & covered:
             continue
-        result = result[:d.start] + d.redacted + result[d.end:]
+        result = result[: d.start] + d.redacted + result[d.end :]
         covered |= span
 
     return result

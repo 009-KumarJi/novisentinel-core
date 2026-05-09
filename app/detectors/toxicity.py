@@ -1,25 +1,27 @@
 import asyncio
 import logging
 from functools import lru_cache
-from app.detectors.base import Detector, DetectionResult
+
 from app.config import settings
+from app.detectors.base import DetectionResult, Detector
 
 logger = logging.getLogger(__name__)
 
 # (category_key, severity, threshold_config_key, default_threshold)
 _CATEGORY_CONFIG: list[tuple[str, str, str, float]] = [
-    ("severe_toxic",  "critical", "toxicity_threshold_severe", 0.5),
-    ("threat",        "critical", "toxicity_threshold_severe", 0.5),
-    ("toxic",         "high",     "toxicity_threshold_high",   0.7),
-    ("identity_hate", "high",     "toxicity_threshold_high",   0.7),
-    ("obscene",       "medium",   "toxicity_threshold_medium", 0.8),
-    ("insult",        "medium",   "toxicity_threshold_medium", 0.8),
+    ("severe_toxic", "critical", "toxicity_threshold_severe", 0.5),
+    ("threat", "critical", "toxicity_threshold_severe", 0.5),
+    ("toxic", "high", "toxicity_threshold_high", 0.7),
+    ("identity_hate", "high", "toxicity_threshold_high", 0.7),
+    ("obscene", "medium", "toxicity_threshold_medium", 0.8),
+    ("insult", "medium", "toxicity_threshold_medium", 0.8),
 ]
 
 
 @lru_cache(maxsize=1)
 def _load_model():
     from detoxify import Detoxify
+
     logger.info("Loading toxicity model: %s", settings.toxicity_model)
     return Detoxify(settings.toxicity_model)
 
@@ -55,16 +57,18 @@ class ToxicityDetector(Detector):
             threshold = config.get(threshold_key, getattr(settings, threshold_key, default_thresh))
             score = float(scores.get(cat_key, 0.0))
             if score >= threshold:
-                results.append(DetectionResult(
-                    detector=self.name,
-                    type=cat_key.upper(),
-                    text=text[:120] + ("..." if len(text) > 120 else ""),
-                    redacted="[TOXIC_CONTENT]",
-                    start=0,
-                    end=len(text),
-                    confidence=round(score, 4),
-                    severity=severity,
-                ))
+                results.append(
+                    DetectionResult(
+                        detector=self.name,
+                        type=cat_key.upper(),
+                        text=text[:120] + ("..." if len(text) > 120 else ""),
+                        redacted="[TOXIC_CONTENT]",
+                        start=0,
+                        end=len(text),
+                        confidence=round(score, 4),
+                        severity=severity,
+                    )
+                )
         # De-duplicate: if both severe_toxic + toxic fire, keep only highest severity
         seen: set[str] = set()
         deduped = []

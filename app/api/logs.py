@@ -1,10 +1,11 @@
-from datetime import datetime, timezone
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, Integer
+from datetime import UTC, datetime
 
-from app.dependencies import require_master_key, get_db
+from fastapi import APIRouter, Depends, Query
+from sqlalchemy import Integer, func, select
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.db.models import ScanLog
+from app.dependencies import get_db, require_master_key
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ async def get_logs(
     if context:
         stmt = stmt.where(ScanLog.context == context)
     if since:
-        dt = datetime.fromisoformat(since).replace(tzinfo=timezone.utc)
+        dt = datetime.fromisoformat(since).replace(tzinfo=UTC)
         stmt = stmt.where(ScanLog.created_at >= dt)
 
     result = await db.execute(stmt)
@@ -66,10 +67,7 @@ async def get_stats(db: AsyncSession = Depends(get_db)):
     total = row.total or 0
     flagged = row.flagged or 0
 
-    risk_rows = await db.execute(
-        select(ScanLog.risk_level, func.count(ScanLog.scan_id))
-        .group_by(ScanLog.risk_level)
-    )
+    risk_rows = await db.execute(select(ScanLog.risk_level, func.count(ScanLog.scan_id)).group_by(ScanLog.risk_level))
     by_risk = {level: count for level, count in risk_rows.all()}
 
     return {

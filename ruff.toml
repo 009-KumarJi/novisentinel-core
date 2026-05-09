@@ -3,11 +3,10 @@
 # https://docs.astral.sh/ruff/
 # =============================================================================
 
-[tool.ruff]
 target-version = "py312"
 line-length = 120
 
-[tool.ruff.lint]
+[lint]
 select = [
     "E",    # pycodestyle errors
     "W",    # pycodestyle warnings
@@ -24,9 +23,14 @@ ignore = [
     "S101",   # allow assert in tests
     "T201",   # allow print in scripts
     "E501",   # line length handled by formatter
+    "B008",   # Depends() in fastapi
+    "B027",   # empty methods in base classes
+    "B007",   # unused loop variables
+    "S110",   # try-except-pass
+    "RUF003", # ambiguous en-dash in comments
 ]
 
-[tool.ruff.lint.per-file-ignores]
+[lint.per-file-ignores]
 "tests/**/*.py" = [
     "S101",   # assert is fine in tests
     "S105",   # hardcoded passwords in test fixtures
@@ -36,5 +40,5 @@ ignore = [
     "T201",   # print is fine in scripts
 ]
 
-[tool.ruff.lint.isort]
+[lint.isort]
 known-first-party = ["app"]

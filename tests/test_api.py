@@ -2,17 +2,19 @@
 API integration tests — no real DB/Redis required.
 All external dependencies are overridden via dependency_overrides.
 """
-import pytest
+
+import uuid
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
-from httpx import AsyncClient, ASGITransport
-from fastapi import FastAPI
 
-from app.db.models import ApiKey
-from app.dependencies import get_db, get_redis, get_current_key
-from app.api import scan, keys, logs
+import pytest
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
+
+from app.api import keys, logs, scan
 from app.core.scanner import ScanResult
-import uuid
+from app.db.models import ApiKey
+from app.dependencies import get_current_key, get_db, get_redis
 
 
 def _make_test_app(api_key=None):
@@ -74,6 +76,7 @@ INJECTION_SCAN = ScanResult(
 @pytest.mark.asyncio
 async def test_health():
     from app.main import app
+
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         resp = await c.get("/health")
     assert resp.status_code == 200

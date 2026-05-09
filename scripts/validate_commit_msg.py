@@ -54,11 +54,11 @@ FORBIDDEN_WORDS = {
 # ── Commit message pattern ───────────────────────────────────────────────
 # Matches: type(scope)!: summary  OR  type!: summary  OR  type: summary
 COMMIT_PATTERN = re.compile(
-    r"^(?P<type>[a-z]+)"           # type (lowercase)
+    r"^(?P<type>[a-z]+)"  # type (lowercase)
     r"(?:\((?P<scope>[a-z0-9-]+)\))?"  # optional (scope)
-    r"(?P<breaking>!)?"            # optional ! for breaking change
-    r":\s"                         # colon + space
-    r"(?P<summary>.+)$"            # summary
+    r"(?P<breaking>!)?"  # optional ! for breaking change
+    r":\s"  # colon + space
+    r"(?P<summary>.+)$"  # summary
 )
 
 MAX_SUBJECT_LENGTH = 72
@@ -69,10 +69,7 @@ def validate_commit_message(message: str) -> list[str]:
     errors = []
 
     # Strip comments (lines starting with #) and get first non-empty line
-    lines = [
-        line for line in message.strip().splitlines()
-        if not line.startswith("#")
-    ]
+    lines = [line for line in message.strip().splitlines() if not line.startswith("#")]
 
     if not lines:
         return ["Commit message is empty."]
@@ -98,17 +95,11 @@ def validate_commit_message(message: str) -> list[str]:
 
     # ── Validate type ────────────────────────────────────────────────────
     if commit_type not in VALID_TYPES:
-        errors.append(
-            f'Invalid type: "{commit_type}"\n'
-            f"  Valid types: {', '.join(sorted(VALID_TYPES))}"
-        )
+        errors.append(f'Invalid type: "{commit_type}"\n' f"  Valid types: {', '.join(sorted(VALID_TYPES))}")
 
     # ── Validate subject length ──────────────────────────────────────────
     if len(subject) > MAX_SUBJECT_LENGTH:
-        errors.append(
-            f"Subject is {len(subject)} chars (max {MAX_SUBJECT_LENGTH}):\n"
-            f'  "{subject}"'
-        )
+        errors.append(f"Subject is {len(subject)} chars (max {MAX_SUBJECT_LENGTH}):\n" f'  "{subject}"')
 
     # ── Summary must start lowercase ─────────────────────────────────────
     if summary and summary[0].isupper():
@@ -133,9 +124,7 @@ def validate_commit_message(message: str) -> list[str]:
 
     # ── Check body formatting (if present) ───────────────────────────────
     if len(lines) > 1 and lines[1].strip():
-        errors.append(
-            "Second line must be blank (separate subject from body)."
-        )
+        errors.append("Second line must be blank (separate subject from body).")
 
     return errors
 
@@ -148,7 +137,7 @@ def main() -> int:
     commit_msg_file = sys.argv[1]
 
     try:
-        with open(commit_msg_file, "r", encoding="utf-8") as f:
+        with open(commit_msg_file, encoding="utf-8") as f:
             message = f.read()
     except FileNotFoundError:
         print(f"File not found: {commit_msg_file}")

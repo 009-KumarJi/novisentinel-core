@@ -1,7 +1,8 @@
 import logging
 from functools import lru_cache
-from app.detectors.base import Detector, DetectionResult
+
 from app.config import settings
+from app.detectors.base import DetectionResult, Detector
 
 logger = logging.getLogger(__name__)
 
@@ -10,9 +11,15 @@ logger = logging.getLogger(__name__)
 # (e.g. city names in weather queries, relative times like "today").
 # Pass them explicitly via config.pii_entities if you need them.
 DEFAULT_ENTITIES = [
-    "EMAIL_ADDRESS", "PHONE_NUMBER", "PERSON",
-    "CREDIT_CARD", "IBAN_CODE", "IP_ADDRESS", "US_SSN",
-    "MEDICAL_LICENSE", "URL",
+    "EMAIL_ADDRESS",
+    "PHONE_NUMBER",
+    "PERSON",
+    "CREDIT_CARD",
+    "IBAN_CODE",
+    "IP_ADDRESS",
+    "US_SSN",
+    "MEDICAL_LICENSE",
+    "URL",
 ]
 
 # Critical entities that warrant a block action
@@ -38,6 +45,7 @@ SEVERITY_MAP = {
 def _get_engines():
     from presidio_analyzer import AnalyzerEngine
     from presidio_anonymizer import AnonymizerEngine
+
     logger.info("Loading Presidio analyzer/anonymizer engines (spaCy: %s)", settings.spacy_model)
     analyzer = AnalyzerEngine()
     anonymizer = AnonymizerEngine()
@@ -58,19 +66,21 @@ class PIIDetector(Detector):
         detections = []
         for r in results:
             entity_type = r.entity_type
-            matched_text = text[r.start:r.end]
+            matched_text = text[r.start : r.end]
             redacted = f"[{entity_type}]"
             severity = SEVERITY_MAP.get(entity_type, "medium")
 
-            detections.append(DetectionResult(
-                detector=self.name,
-                type=entity_type,
-                text=matched_text,
-                redacted=redacted,
-                start=r.start,
-                end=r.end,
-                confidence=round(r.score, 4),
-                severity=severity,
-            ))
+            detections.append(
+                DetectionResult(
+                    detector=self.name,
+                    type=entity_type,
+                    text=matched_text,
+                    redacted=redacted,
+                    start=r.start,
+                    end=r.end,
+                    confidence=round(r.score, 4),
+                    severity=severity,
+                )
+            )
 
         return detections

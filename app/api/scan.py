@@ -1,14 +1,15 @@
 import asyncio
 import uuid
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+
+from fastapi import APIRouter, BackgroundTasks, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_key, get_db
-from app.db.models import ApiKey, ScanLog
-from app.core.scanner import scan
 from app.core.auth import hash_text
+from app.core.scanner import scan
 from app.core.webhook import fire_webhooks
+from app.db.models import ApiKey, ScanLog
+from app.dependencies import get_current_key, get_db
 
 router = APIRouter()
 
@@ -104,12 +105,11 @@ async def scan_batch(
     api_key: ApiKey = Depends(get_current_key),
 ):
     configs = [item.config.model_dump(exclude_none=True) for item in body.texts]
-    results = await asyncio.gather(*(
-        scan(item.text, item.context, cfg)
-        for item, cfg in zip(body.texts, configs)
-    ))
+    results = await asyncio.gather(
+        *(scan(item.text, item.context, cfg) for item, cfg in zip(body.texts, configs, strict=False))
+    )
 
-    for item, result in zip(body.texts, results):
+    for item, result in zip(body.texts, results, strict=False):
         log = ScanLog(
             id=uuid.uuid4(),
             scan_id=uuid.UUID(result.scan_id),

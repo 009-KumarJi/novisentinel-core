@@ -34,13 +34,14 @@ repos:
     rev: v4.6.0
     hooks:
       - id: detect-private-key
+        exclude: ^tests/test_secrets\.py$
 
   # ── Block .env files from being committed ─────────────────────────────
   - repo: local
     hooks:
       - id: no-env-files
         name: Block .env files
-        entry: bash -c 'echo "ERROR: .env files must not be committed. Use .env.example instead." && exit 1'
+        entry: bash -c 'echo "ERROR - .env files must not be committed. Use .env.example instead." && exit 1'
         language: system
         files: '\.env$'
         exclude: '\.env\.example$|\.env\.local\.example$'

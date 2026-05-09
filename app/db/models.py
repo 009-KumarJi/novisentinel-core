@@ -1,12 +1,13 @@
 import uuid
-from datetime import datetime, timezone
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text, JSON
+from datetime import UTC, datetime
+
+from sqlalchemy import JSON, Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase
 
 
 def utcnow():
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 class Base(DeclarativeBase):
@@ -31,11 +32,11 @@ class ScanLog(Base):
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     scan_id = Column(UUID(as_uuid=True), nullable=False, index=True)
     api_key_id = Column(UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=False)
-    context = Column(Text, nullable=True)          # "input" | "output"
+    context = Column(Text, nullable=True)  # "input" | "output"
     text_hash = Column(String(64), nullable=False)  # SHA256, raw text never stored
     safe = Column(Boolean, nullable=False)
-    risk_level = Column(Text, nullable=False)       # none/low/medium/high/critical
-    action = Column(Text, nullable=False)           # allow/warn/redact/block
+    risk_level = Column(Text, nullable=False)  # none/low/medium/high/critical
+    action = Column(Text, nullable=False)  # allow/warn/redact/block
     pii_count = Column(Integer, default=0)
     injection_count = Column(Integer, default=0)
     secrets_count = Column(Integer, default=0)
@@ -52,7 +53,7 @@ class WebhookConfig(Base):
     api_key_id = Column(UUID(as_uuid=True), ForeignKey("api_keys.id"), nullable=False, index=True)
     url = Column(Text, nullable=False)
     secret = Column(Text, nullable=False)
-    trigger_actions = Column(JSON, nullable=False, default=list)      # e.g. ["block", "warn"]
+    trigger_actions = Column(JSON, nullable=False, default=list)  # e.g. ["block", "warn"]
     trigger_risk_levels = Column(JSON, nullable=False, default=list)  # e.g. ["critical", "high"]
     is_active = Column(Boolean, default=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=utcnow, index=True)

@@ -4,16 +4,16 @@ import ipaddress
 import json
 import logging
 import socket
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.scanner import ScanResult
 from app.db.models import WebhookConfig
 from app.db.session import AsyncSessionLocal
-from app.core.scanner import ScanResult
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +35,7 @@ def validate_webhook_url(url: str) -> None:
     # DNS rebinding is still possible (resolve-at-validation vs resolve-at-delivery).
     # A complete fix would pin the resolved IP. Documented limitation — out of scope.
     from app.config import settings
+
     parsed = urlparse(url)
     allowed_schemes = {"https"} if not settings.allow_insecure_webhooks else {"http", "https"}
     if parsed.scheme not in allowed_schemes:
@@ -104,7 +105,7 @@ async def _fire(
             }
             for d in result.detections
         ],
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
     payload_bytes = json.dumps(payload_dict, separators=(",", ":")).encode()
 

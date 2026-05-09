@@ -1,4 +1,3 @@
-import pytest
 from app.detectors.secrets import SecretsDetector
 
 detector = SecretsDetector()

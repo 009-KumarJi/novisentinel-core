@@ -1,13 +1,14 @@
 import secrets
 import uuid
+
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, HttpUrl, Field
-from sqlalchemy import select, delete
+from pydantic import BaseModel, Field, HttpUrl
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_key, get_db
-from app.db.models import ApiKey, WebhookConfig
 from app.core.webhook import validate_webhook_url
+from app.db.models import ApiKey, WebhookConfig
+from app.dependencies import get_current_key, get_db
 
 router = APIRouter()
 
@@ -66,9 +67,7 @@ async def list_webhooks(
     db: AsyncSession = Depends(get_db),
     api_key: ApiKey = Depends(get_current_key),
 ):
-    rows = await db.execute(
-        select(WebhookConfig).where(WebhookConfig.api_key_id == api_key.id)
-    )
+    rows = await db.execute(select(WebhookConfig).where(WebhookConfig.api_key_id == api_key.id))
     return [
         WebhookResponse(
             id=str(wh.id),
