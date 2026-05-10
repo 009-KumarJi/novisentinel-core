@@ -1,10 +1,10 @@
 # NoviSentinel
 
-**AI Safety & PII Firewall for LLM applications.**
+**An open-source safety scanner for LLM applications.**
 
-Drop-in scan API that sits between your app and your LLM. Detects and blocks prompt injection, PII leaks, exposed credentials, and toxic content — in real time.
+Self-hostable FastAPI service that detects and blocks PII leaks, prompt injection, exposed credentials, and toxic content — in real time, in front of any LLM.
 
-> Developer-first alternative to Lakera Guard. Self-hostable, open source, no sales call required.
+> Drop it between your app and your model. Scan input before it goes to the LLM, scan output before it goes to the user. Block what's dangerous, redact what's sensitive, allow what's clean.
 
 ---
 
@@ -15,7 +15,9 @@ Drop-in scan API that sits between your app and your LLM. Detects and blocks pro
 | Prompt injection (override, jailbreak, role hijack, exfil) | Regex → ML fallback | ~1ms / ~80ms |
 | PII (SSN, credit card, email, phone, IP, IBAN) | Presidio NLP | ~5ms |
 | Secrets (OpenAI, Anthropic, AWS, GitHub, Stripe, JWT, private keys) | Regex | <1ms |
-| Toxicity (threats, hate speech, harassment, obscenity) | detoxify ML | ~100ms |
+| Toxicity (threats, hate speech, harassment, obscenity) | Detoxify ML | ~100ms |
+
+All four detectors run in parallel per request. Total p95 budget: ~120ms on CPU for English text up to 2KB.
 
 ---
 
@@ -88,6 +90,21 @@ result = await client.scan(text, context="input")
 ```python
 results = client.scan_batch(["text1", "text2", "text3"])
 ```
+
+---
+
+## VS Code extension
+
+Scan prompts before you send them — without leaving your editor.
+
+```
+@novisentinel my SSN is 123-45-6789
+```
+
+Right-click any selected text → **NoviSentinel: Scan Selection**.
+Copied something sensitive? → **NoviSentinel: Scan Clipboard** before pasting into ChatGPT.
+
+Install from the VS Code Marketplace (search "NoviSentinel") or build from [`extensions/vscode/`](extensions/vscode/).
 
 ---
 
@@ -227,7 +244,7 @@ GET /v1/stats  # aggregate stats (master key required)
 
 Logs support query params: `?action=block`, `?risk_level=critical`, `?context=input`, `?since=2026-05-01T00:00:00`, `?limit=100`.
 
-Raw text is **never stored** — only a SHA256 hash of each scanned text is persisted.
+Raw text is **never stored** — only a SHA-256 hash of each scanned text is persisted.
 
 ---
 
@@ -278,13 +295,15 @@ app/
 │   ├── pii.py         # Presidio NLP
 │   ├── injection.py   # Regex → ML two-layer detection
 │   ├── secrets.py     # Regex credential scanner
-│   └── toxicity.py    # detoxify ML
+│   └── toxicity.py    # Detoxify ML
 ├── db/
 │   ├── models.py      # ApiKey, ScanLog, WebhookConfig SQLAlchemy models
 │   └── session.py     # Async engine
 └── config.py          # Pydantic settings
 
 sdk/python/            # pip install novisentinel
+extensions/vscode/     # @novisentinel chat participant + scan commands
+dashboard/             # local single-tenant Next.js dashboard
 tests/                 # 54 tests, pytest-asyncio
 ```
 
@@ -319,6 +338,22 @@ text
 
 ---
 
+## Local dashboard
+
+A Next.js dashboard at [`dashboard/`](dashboard/) gives you a local view of scans, logs, and stats. Single-tenant, master-key auth. Boots alongside the API via Docker Compose.
+
+```
+http://localhost:3001
+```
+
+Pages:
+- **Overview** — KPIs, recent activity, blocks per minute
+- **Logs** — full scan history with filters
+- **Analytics** — risk-level distribution, detector hit rates
+- **Settings** — API keys, webhooks
+
+---
+
 ## Running tests
 
 ```bash
@@ -326,7 +361,7 @@ pip install -r requirements.txt
 pytest tests/ -v
 ```
 
-54 tests across: PII, injection, secrets, toxicity, webhooks, API integration.
+54 tests across PII, injection, secrets, toxicity, webhooks, and API integration.
 
 ---
 
@@ -335,11 +370,56 @@ pytest tests/ -v
 - **FastAPI** — async API framework
 - **PostgreSQL + asyncpg** — scan logs, API keys, webhook configs
 - **Redis** — sliding window rate limiting
-- **Presidio** — Microsoft's PII detection engine
+- **Presidio** — PII detection engine (Microsoft)
 - **protectai/deberta-v3-base-prompt-injection-v2** — ML injection classifier
-- **detoxify** — toxicity classification (unitary/toxic-bert)
+- **Detoxify** — toxicity classification (unitary/toxic-bert)
 - **httpx** — async webhook delivery + SDK HTTP client
 - **Docker Compose** — postgres + redis + api, one command boot
+
+---
+
+## What this is for
+
+Use NoviSentinel when:
+
+- **Your app sends user-generated text to an LLM** and you want to catch PII, secrets, and injection attempts before they leave your system.
+- **Your app surfaces LLM responses to users** and you want to redact PII or block toxic content before the user sees it.
+- **You log LLM prompts and responses** and you want a verdict on each (`safe`, `risk_level`, `action`) alongside the raw text.
+- **You're building an agent** that uses tools — scan tool-call arguments before execution, scan tool-call outputs before they're handed back to the model.
+- **You want self-hosting and a local dashboard** rather than a hosted SaaS scanner.
+
+NoviSentinel is one HTTP call. It doesn't replace your LLM, your auth, your logging, or your application logic — it sits next to them and watches text.
+
+---
+
+## Privacy & data handling
+
+- Raw text is never stored. Every scanned text is hashed to SHA-256 before persistence.
+- Scan logs contain: hash, length, detector results, risk level, action, timestamp.
+- No third-party calls happen during a scan unless you explicitly enable a feature that requires one.
+- Webhook payloads are HMAC-signed. You verify with the `signing_secret` returned at webhook creation.
+- All models run locally inside the container. No data leaves your network.
+
+---
+
+## Roadmap
+
+- Code injection detection
+- URL safety detection
+- Multilingual support
+- Browser extension (ChatGPT.com, Claude.ai)
+- Node / TypeScript SDK
+- Custom detector support (plug in your own scanner)
+
+See [`plans/`](plans/) for the detailed roadmap.
+
+---
+
+## Contributing
+
+Issues and PRs welcome. See [`CONTRIBUTING.md`](CONTRIBUTING.md) for development setup, coding conventions, and the PR process.
+
+For security disclosures, **do not open a public issue** — see [`SECURITY.md`](SECURITY.md).
 
 ---
 

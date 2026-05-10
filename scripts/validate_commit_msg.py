@@ -21,6 +21,9 @@ Usage:
 import re
 import sys
 
+sys.stdout.reconfigure(encoding="utf-8")
+sys.stderr.reconfigure(encoding="utf-8")
+
 # ── Official types ───────────────────────────────────────────────────────
 VALID_TYPES = {
     "feat",
