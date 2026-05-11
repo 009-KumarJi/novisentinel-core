@@ -17,8 +17,9 @@ from __future__ import annotations
 
 import os
 
-from novisentinel import Client
 from openai import OpenAI
+
+from novisentinel import Client
 
 openai_client = OpenAI()
 sentinel = Client(

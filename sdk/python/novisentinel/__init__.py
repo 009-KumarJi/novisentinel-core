@@ -9,13 +9,13 @@ from .exceptions import (
 from .models import Detection, ScanResult
 
 __all__ = [
-    "Client",
     "AsyncClient",
-    "ScanResult",
-    "Detection",
-    "ScanError",
     "AuthError",
+    "Client",
+    "Detection",
     "RateLimitError",
+    "ScanError",
+    "ScanResult",
     "ServiceUnavailableError",
     "ValidationError",
 ]

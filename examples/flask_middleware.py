@@ -21,6 +21,7 @@ import json
 import os
 
 from flask import Flask, g, jsonify, request
+
 from novisentinel import Client
 
 _sentinel = Client(

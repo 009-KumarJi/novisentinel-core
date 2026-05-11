@@ -35,7 +35,7 @@ async def get_current_key(
         return master_row
 
     key_hash = hash_key(token)
-    result = await db.execute(select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active == True))
+    result = await db.execute(select(ApiKey).where(ApiKey.key_hash == key_hash, ApiKey.is_active.is_(True)))
     api_key = result.scalar_one_or_none()
     if not api_key:
         raise HTTPException(status_code=401, detail="Invalid or revoked API key")

@@ -12,8 +12,9 @@ from __future__ import annotations
 import os
 
 import streamlit as st
-from novisentinel import Client
 from openai import OpenAI
+
+from novisentinel import Client
 
 # ── Setup ─────────────────────────────────────────────────────────────────────
 
@@ -41,8 +42,7 @@ with st.sidebar:
     for entry in reversed(st.session_state.scan_log[-10:]):
         badge = {"block": "🛑", "warn": "⚠️", "redact": "✏️", "allow": "✅"}.get(entry["action"], "?")
         st.markdown(
-            f"{badge} **{entry['action'].upper()}** · {entry['direction']} · "
-            f"{len(entry['detections'])} detection(s)"
+            f"{badge} **{entry['action'].upper()}** · {entry['direction']} · {len(entry['detections'])} detection(s)"
         )
         for d in entry["detections"]:
             st.caption(f"  {d['detector']}/{d['type']} ({d['severity']})")
