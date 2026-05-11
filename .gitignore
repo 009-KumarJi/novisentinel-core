@@ -29,6 +29,7 @@ pip-log.txt
 # Testing & Coverage
 # ========================
 .pytest_cache/
+coverage.xml
 .coverage
 .coverage.*
 htmlcov/
@@ -43,7 +44,6 @@ node_modules/
 out/
 next-env.d.ts
 .turbo/
-package-lock.json
 yarn.lock
 pnpm-lock.yaml
 
@@ -87,6 +87,13 @@ temp/
 # Plans (dev-only)
 # ========================
 plans/
+
+
+# ========================
+# Temp (dev-only)
+# ========================
+temp/
+
 
 # ========================
 # Docker (optional local)
