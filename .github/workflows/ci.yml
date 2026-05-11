@@ -52,18 +52,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
+          allow-prereleases: true
 
       - name: Cache pip wheels
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-py314-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-pip-
+            ${{ runner.os }}-py314-pip-
 
       - name: Cache spaCy model
         uses: actions/cache@v4
@@ -87,18 +88,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
+          allow-prereleases: true
 
       - name: Cache pip wheels
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-sdk-pip-${{ hashFiles('sdk/python/pyproject.toml') }}
+          key: ${{ runner.os }}-py314-sdk-pip-${{ hashFiles('sdk/python/pyproject.toml') }}
           restore-keys: |
-            ${{ runner.os }}-sdk-pip-
+            ${{ runner.os }}-py314-sdk-pip-
 
       - name: Install SDK with test deps
         run: pip install -e ".[test]"
@@ -115,13 +117,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python 3.14
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.14"
+          allow-prereleases: true
 
       - name: Install ruff
         run: pip install ruff
 
       - name: Run ruff check
         run: ruff check .
+
+      - name: Run ruff format check
+        run: ruff format --check .
