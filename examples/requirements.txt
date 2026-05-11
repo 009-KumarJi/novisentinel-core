@@ -1,5 +1,5 @@
 novisentinel>=0.1.0
-openai>=1.0.0
+openai>=2.36.0
 anthropic>=0.28.0
 langchain>=0.2.0
 langchain-openai>=0.1.0
