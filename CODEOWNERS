@@ -1,0 +1,25 @@
+# CODEOWNERS
+# Each line maps a path pattern to the owner(s) who must review PRs touching it.
+# Last matching rule wins. Docs: https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+# Global fallback — everything requires a review from the maintainer
+* @009-KumarJi
+
+# Core application
+/app/                   @009-KumarJi
+/tests/                 @009-KumarJi
+
+# Python SDK — any SDK change needs careful review
+/sdk/python/            @009-KumarJi
+
+# VS Code extension
+/extensions/vscode/     @009-KumarJi
+
+# CI/CD and repo configuration — highest scrutiny
+/.github/               @009-KumarJi
+/docker-compose*.yml    @009-KumarJi
+/Dockerfile             @009-KumarJi
+
+# Security-sensitive paths
+/app/auth/              @009-KumarJi
+/app/core/security*     @009-KumarJi
