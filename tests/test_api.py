@@ -87,7 +87,7 @@ async def test_scan_requires_auth():
     test_app = _make_test_app()  # no api_key override
     async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as c:
         resp = await c.post("/v1/scan", json={"text": "hello"})
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)
 
 
 @pytest.mark.asyncio

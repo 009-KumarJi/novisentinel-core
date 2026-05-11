@@ -12,6 +12,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import keys
+from app.config import settings
 from app.db.models import ApiKey
 from app.dependencies import get_db, get_redis
 
@@ -42,7 +43,7 @@ def _plain_db():
     return fake_db
 
 
-_MASTER = "dev-master-key"
+_MASTER = settings.master_api_key
 
 
 @pytest.mark.asyncio
