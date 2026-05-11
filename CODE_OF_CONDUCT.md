@@ -49,6 +49,19 @@ reported to the project maintainer at **kumarji@novisentinel.com**.
 
 All complaints will be reviewed and investigated promptly and fairly.
 
+**Response timeline:** We will acknowledge every report within **48 hours** and
+reach a resolution within **14 days** of acknowledgement.
+
+**Enforcement actions** (applied at maintainer discretion, proportional to severity):
+
+1. **Warning** — a private written warning with an explanation of the violation.
+2. **Temporary ban** — a temporary block from all community interaction (length
+   specified in the warning).
+3. **Permanent ban** — permanent removal from all community spaces for repeated
+   or severe violations.
+
+All enforcement decisions are final. Reporters may remain anonymous on request.
+
 ## Attribution
 
 This Code of Conduct is adapted from the [Contributor Covenant](https://www.contributor-covenant.org/),

@@ -9,7 +9,7 @@ Enforces the project's Conventional Commits convention:
 Rules:
   - Type must be from the official list
   - Scope is optional but must be lowercase alphanumeric + hyphens
-  - Summary must be lowercase, imperative mood, under 72 chars
+  - Summary must be lowercase, imperative mood, under 100 chars
   - Forbidden words are rejected (wip, temp, misc, fixes, etc.)
   - Breaking changes use '!' after scope: feat(api)!: ...
 
@@ -64,7 +64,7 @@ COMMIT_PATTERN = re.compile(
     r"(?P<summary>.+)$"  # summary
 )
 
-MAX_SUBJECT_LENGTH = 72
+MAX_SUBJECT_LENGTH = 100
 
 
 def validate_commit_message(message: str) -> list[str]:

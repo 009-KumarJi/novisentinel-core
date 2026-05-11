@@ -428,3 +428,5 @@ For security disclosures, **do not open a public issue** — see [`SECURITY.md`]
 Copyright 2026 Kumar Ji (009-KumarJi)
 
 Licensed under the [Apache License, Version 2.0](LICENSE). See [LICENSE](LICENSE) for the full text.
+
+The Apache License covers the **code**. The NoviSentinel name and logo are trademarks — see [TRADEMARK.md](TRADEMARK.md).

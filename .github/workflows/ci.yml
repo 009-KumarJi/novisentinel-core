@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: Test (Python)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: sentinel
+          POSTGRES_PASSWORD: sentinel
+          POSTGRES_DB: novisentinel
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      MASTER_API_KEY: ci-test-key-not-for-prod
+      DATABASE_URL: postgresql+asyncpg://sentinel:sentinel@localhost:5432/novisentinel
+      REDIS_URL: redis://localhost:6379
+      SPACY_MODEL: en_core_web_lg
+      INJECTION_MODEL: protectai/deberta-v3-base-prompt-injection-v2
+      INJECTION_THRESHOLD: "0.85"
+      DEFAULT_RATE_LIMIT_RPM: "120"
+      TOXICITY_ENABLED: "true"
+      TOXICITY_MODEL: original
+      TOXICITY_THRESHOLD_SEVERE: "0.5"
+      TOXICITY_THRESHOLD_HIGH: "0.7"
+      TOXICITY_THRESHOLD_MEDIUM: "0.8"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip wheels
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Cache spaCy model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/spacy
+          key: ${{ runner.os }}-spacy-en_core_web_lg-3
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Download spaCy model
+        run: python -m spacy download en_core_web_lg
+
+      - name: Run tests
+        run: pytest tests/ -v
+
+  sdk-test:
+    name: Test (Python SDK)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip wheels
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-sdk-pip-${{ hashFiles('sdk/python/pyproject.toml') }}
+          restore-keys: |
+            ${{ runner.os }}-sdk-pip-
+
+      - name: Install SDK with test deps
+        run: pip install -e ".[test]"
+        working-directory: sdk/python
+
+      - name: Run SDK tests
+        run: pytest tests/ -v
+        working-directory: sdk/python
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ruff
+        run: pip install ruff
+
+      - name: Run ruff check
+        run: ruff check .

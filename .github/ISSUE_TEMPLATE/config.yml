@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: GitHub Discussions (questions & ideas)
+    url: https://github.com/009-KumarJi/novi-sentinel/discussions
+    about: Use Discussions for questions, ideas, and community chat. Issues are for bugs and feature requests only.
+  - name: Security vulnerability
+    url: https://github.com/009-KumarJi/novi-sentinel/security/advisories/new
+    about: Report a security vulnerability privately via GitHub Security Advisories.

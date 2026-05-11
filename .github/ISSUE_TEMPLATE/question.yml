@@ -1,0 +1,33 @@
+name: Question
+description: Got a question? Prefer Discussions for open-ended questions.
+title: "[QUESTION] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        > **Tip:** For open-ended questions and community discussion, [GitHub Discussions](https://github.com/009-KumarJi/novi-sentinel/discussions) is a better fit — answers stay discoverable there.
+
+  - type: textarea
+    id: question
+    attributes:
+      label: Your question
+      description: What do you want to know?
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Context
+      description: What are you trying to accomplish? Any relevant code or config?
+    validations:
+      required: false
+
+  - type: input
+    id: version
+    attributes:
+      label: NoviSentinel version
+      placeholder: "e.g. 1.0.0"
+    validations:
+      required: false
