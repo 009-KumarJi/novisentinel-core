@@ -2,10 +2,12 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
+    branches: [main, develop]
 
 jobs:
+  # ── Backend: full integration tests + 80% coverage ──────────────────────────
   test:
     name: Test (Python)
     runs-on: ubuntu-latest
@@ -78,9 +80,17 @@ jobs:
       - name: Download spaCy model
         run: python -m spacy download en_core_web_lg
 
-      - name: Run tests
-        run: pytest tests/ -v
+      - name: Run tests with coverage (≥80% required)
+        run: pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=80
 
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: coverage.xml
+
+  # ── Python SDK tests ────────────────────────────────────────────────────────
   sdk-test:
     name: Test (Python SDK)
     runs-on: ubuntu-latest
@@ -106,10 +116,11 @@ jobs:
         run: pip install -e ".[test]"
         working-directory: sdk/python
 
-      - name: Run SDK tests
+      - name: Run SDK tests (no failures allowed)
         run: pytest tests/ -v
         working-directory: sdk/python
 
+  # ── Lint (ruff check + format) ───────────────────────────────────────────────
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -131,3 +142,26 @@ jobs:
 
       - name: Run ruff format check
         run: ruff format --check .
+
+  # ── Frontend: TypeScript type check ─────────────────────────────────────────
+  frontend-check:
+    name: Frontend (TypeScript)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: "npm"
+          cache-dependency-path: dashboard/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+        working-directory: dashboard
+
+      - name: TypeScript type check
+        run: npx tsc --noEmit
+        working-directory: dashboard

@@ -14,7 +14,7 @@ NoviSentinel is a security tool — we take vulnerabilities in our own code extr
 
 Instead, report them privately:
 
-1. **Email:** [security@novisentinel.com](mailto:security@novisentinel.com)
+1. **Email:** [kumarkrishna.092002@gmail.com](mailto:kumarkrishna.092002@gmail.com)
 2. **Subject line:** `[SECURITY] <brief description>`
 3. **Include:**
    - Description of the vulnerability
