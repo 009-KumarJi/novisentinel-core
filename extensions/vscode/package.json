@@ -1,0 +1,101 @@
+{
+  "name": "novisentinel-vscode",
+  "displayName": "NoviSentinel",
+  "description": "Scan text for PII, prompt injection, secrets, and toxicity before sending to LLMs.",
+  "version": "0.1.0",
+  "publisher": "novisentinel",
+  "private": true,
+  "engines": {
+    "vscode": "^1.93.0"
+  },
+  "categories": ["AI", "Other"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "novisentinel.scan",
+        "name": "novisentinel",
+        "fullName": "NoviSentinel",
+        "description": "Scan prompts for PII, prompt injection, secrets, and toxicity.",
+        "isSticky": false
+      }
+    ],
+    "commands": [
+      {
+        "command": "novisentinel.scanSelection",
+        "title": "NoviSentinel: Scan Selection"
+      },
+      {
+        "command": "novisentinel.scanClipboard",
+        "title": "NoviSentinel: Scan Clipboard"
+      },
+      {
+        "command": "novisentinel.setApiKey",
+        "title": "NoviSentinel: Set API Key"
+      },
+      {
+        "command": "novisentinel.openSettings",
+        "title": "NoviSentinel: Open Settings"
+      },
+      {
+        "command": "novisentinel.testConnection",
+        "title": "NoviSentinel: Test Connection"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "novisentinel.scanSelection",
+        "key": "ctrl+shift+s",
+        "mac": "cmd+shift+s",
+        "when": "editorHasSelection"
+      },
+      {
+        "command": "novisentinel.scanClipboard",
+        "key": "ctrl+shift+v ctrl+s",
+        "mac": "cmd+shift+v cmd+s"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "novisentinel.scanSelection",
+          "when": "editorHasSelection",
+          "group": "novisentinel@1"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "NoviSentinel",
+      "properties": {
+        "novisentinel.apiUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Base URL of the NoviSentinel API."
+        },
+        "novisentinel.scanContext": {
+          "type": "string",
+          "enum": ["input", "output"],
+          "default": "input",
+          "description": "Whether the scanned text is treated as an LLM input or output."
+        },
+        "novisentinel.healthPollSeconds": {
+          "type": "number",
+          "default": 30,
+          "minimum": 5,
+          "description": "How often the status bar checks API health, in seconds."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p .",
+    "watch": "tsc -w -p .",
+    "vscode:prepublish": "tsc -p ."
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "@types/vscode": "^1.93.0",
+    "typescript": "^5.6.0"
+  }
+}
