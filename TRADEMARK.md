@@ -17,4 +17,4 @@ You may not:
 - Use the NoviSentinel logo without written permission.
 - Imply official endorsement by the NoviSentinel project.
 
-For permission requests: [kumarji@novisentinel.com](mailto:kumarji@novisentinel.com)
+For permission requests: [kumarkrishna.092002@gmail.com](mailto:kumarkrishna.092002@gmail.com)
