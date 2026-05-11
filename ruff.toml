@@ -3,7 +3,7 @@
 # https://docs.astral.sh/ruff/
 # =============================================================================
 
-target-version = "py312"
+target-version = "py313"
 line-length = 120
 
 [lint]
@@ -31,14 +31,20 @@ ignore = [
 ]
 
 [lint.per-file-ignores]
-"tests/**/*.py" = [
+"**/tests/**/*.py" = [
     "S101",   # assert is fine in tests
     "S105",   # hardcoded passwords in test fixtures
     "S106",   # hardcoded passwords in test arguments
+    "S107",   # hardcoded passwords in test defaults
+]
+"examples/**/*.py" = [
+    "S105",   # dev-mode fallback API key strings
+    "S106",   # dev-mode fallback passed as keyword arg
+    "S107",   # dev-mode fallback in default
 ]
 "scripts/**/*.py" = [
     "T201",   # print is fine in scripts
 ]
 
 [lint.isort]
-known-first-party = ["app"]
+known-first-party = ["app", "novisentinel"]
