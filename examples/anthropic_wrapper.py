@@ -15,6 +15,7 @@ from __future__ import annotations
 import os
 
 from anthropic import Anthropic
+
 from novisentinel import Client
 
 anthropic_client = Anthropic()

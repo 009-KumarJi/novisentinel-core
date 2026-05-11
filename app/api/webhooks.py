@@ -37,7 +37,7 @@ async def create_webhook(
     try:
         validate_webhook_url(str(body.url))
     except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     signing_secret = secrets.token_hex(32)
     wh = WebhookConfig(

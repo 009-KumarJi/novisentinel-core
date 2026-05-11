@@ -24,6 +24,7 @@ import os
 from typing import Any
 
 from langchain.callbacks.base import BaseCallbackHandler
+
 from novisentinel import Client
 
 

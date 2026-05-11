@@ -47,7 +47,7 @@ def validate_webhook_url(url: str) -> None:
     try:
         infos = socket.getaddrinfo(parsed.hostname, None)
     except socket.gaierror as exc:
-        raise ValueError(f"Webhook URL hostname does not resolve: {exc}")
+        raise ValueError(f"Webhook URL hostname does not resolve: {exc}") from exc
     for _family, _, _, _, sockaddr in infos:
         ip = ipaddress.ip_address(sockaddr[0])
         if any(ip in net for net in _BLOCKED_NETWORKS):

@@ -1,6 +1,7 @@
 import httpx
 import pytest
 import respx
+
 from novisentinel import AuthError, Client, RateLimitError, ServiceUnavailableError, ValidationError
 
 from .conftest import API_KEY, API_URL, BATCH_RESPONSE, SCAN_RESPONSE

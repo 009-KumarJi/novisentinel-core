@@ -98,18 +98,16 @@ def validate_commit_message(message: str) -> list[str]:
 
     # ── Validate type ────────────────────────────────────────────────────
     if commit_type not in VALID_TYPES:
-        errors.append(f'Invalid type: "{commit_type}"\n' f"  Valid types: {', '.join(sorted(VALID_TYPES))}")
+        errors.append(f'Invalid type: "{commit_type}"\n  Valid types: {", ".join(sorted(VALID_TYPES))}')
 
     # ── Validate subject length ──────────────────────────────────────────
     if len(subject) > MAX_SUBJECT_LENGTH:
-        errors.append(f"Subject is {len(subject)} chars (max {MAX_SUBJECT_LENGTH}):\n" f'  "{subject}"')
+        errors.append(f'Subject is {len(subject)} chars (max {MAX_SUBJECT_LENGTH}):\n  "{subject}"')
 
     # ── Summary must start lowercase ─────────────────────────────────────
     if summary and summary[0].isupper():
         errors.append(
-            f"Summary must start with a lowercase letter:\n"
-            f'  ❌ "{summary}"\n'
-            f'  ✅ "{summary[0].lower() + summary[1:]}"'
+            f'Summary must start with a lowercase letter:\n  ❌ "{summary}"\n  ✅ "{summary[0].lower() + summary[1:]}"'
         )
 
     # ── Summary must not end with a period ───────────────────────────────

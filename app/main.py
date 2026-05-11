@@ -22,8 +22,7 @@ async def lifespan(app: FastAPI):
 
     if settings.environment != "dev" and settings.master_api_key == "dev-master-key":
         raise RuntimeError(
-            "MASTER_API_KEY must be set when ENVIRONMENT != dev. "
-            "The default 'dev-master-key' is publicly documented."
+            "MASTER_API_KEY must be set when ENVIRONMENT != dev. The default 'dev-master-key' is publicly documented."
         )
 
     async with engine.begin() as conn:
