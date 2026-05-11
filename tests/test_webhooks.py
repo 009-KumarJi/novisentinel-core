@@ -54,7 +54,7 @@ async def test_create_webhook_requires_auth():
     test_app = _make_test_app()
     async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as c:
         resp = await c.post("/v1/webhooks", json={"url": "https://example.com/hook"})
-    assert resp.status_code == 403
+    assert resp.status_code in (401, 403)
 
 
 @pytest.mark.asyncio

@@ -12,10 +12,11 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from app.api import logs
+from app.config import settings
 from app.db.models import ScanLog
 from app.dependencies import get_db, get_redis
 
-_MASTER = "dev-master-key"
+_MASTER = settings.master_api_key
 
 
 def _make_test_app(db_factory):
