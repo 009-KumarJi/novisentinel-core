@@ -1,4 +1,5 @@
 import logging
+import re
 from functools import lru_cache
 
 from app.config import settings
@@ -44,12 +45,50 @@ SEVERITY_MAP = {
 @lru_cache(maxsize=1)
 def _get_engines():
     from presidio_analyzer import AnalyzerEngine
+    from presidio_analyzer.nlp_engine import NlpEngineProvider
     from presidio_anonymizer import AnonymizerEngine
 
     logger.info("Loading Presidio analyzer/anonymizer engines (spaCy: %s)", settings.spacy_model)
-    analyzer = AnalyzerEngine()
+    nlp_engine = NlpEngineProvider(
+        nlp_configuration={
+            "nlp_engine_name": "spacy",
+            "models": [{"lang_code": "en", "model_name": settings.spacy_model}],
+        }
+    ).create_engine()
+    analyzer = AnalyzerEngine(nlp_engine=nlp_engine)
     anonymizer = AnonymizerEngine()
     return analyzer, anonymizer
+
+
+# Fallback SSN detection. Presidio's UsSsnRecognizer gives the dash pattern a
+# very low base score (0.05) and depends on context-enhancement to clear the
+# 0.35 threshold; that pipeline has been unreliable across Presidio versions,
+# so we run an independent regex with a context-word check as a safety net.
+_SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+_SSN_CONTEXT = re.compile(r"\b(ssn|social\s*security|tax\s*id)\b", re.IGNORECASE)
+
+
+def _ssn_fallback(text: str) -> list[DetectionResult]:
+    if not _SSN_CONTEXT.search(text):
+        return []
+    out: list[DetectionResult] = []
+    for m in _SSN_PATTERN.finditer(text):
+        area = m.group(0)[:3]
+        if area in ("000", "666") or area.startswith("9"):
+            continue
+        out.append(
+            DetectionResult(
+                detector="pii",
+                type="US_SSN",
+                text=m.group(0),
+                redacted="[US_SSN]",
+                start=m.start(),
+                end=m.end(),
+                confidence=0.95,
+                severity="critical",
+            )
+        )
+    return out
 
 
 class PIIDetector(Detector):
@@ -82,5 +121,8 @@ class PIIDetector(Detector):
                     severity=severity,
                 )
             )
+
+        if "US_SSN" in entities and not any(d.type == "US_SSN" for d in detections):
+            detections.extend(_ssn_fallback(text))
 
         return detections
