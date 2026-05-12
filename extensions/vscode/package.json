@@ -2,9 +2,13 @@
   "name": "novisentinel-vscode",
   "displayName": "NoviSentinel",
   "description": "Scan text for PII, prompt injection, secrets, and toxicity before sending to LLMs.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "novisentinel",
   "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/009-KumarJi/novisentinel-core"
+  },
   "engines": {
     "vscode": "^1.93.0"
   },
