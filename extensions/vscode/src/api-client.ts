@@ -62,7 +62,7 @@ export class NoviSentinelClient {
     const cfg = vscode.workspace.getConfiguration("novisentinel");
     const base = cfg.get<string>("apiUrl", this.apiUrl).replace(/\/$/, "");
     try {
-      const resp = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(5_000) });
+      const resp = await fetch(`${base}/health`, { signal: AbortSignal.timeout(5_000) });
       return resp.ok;
     } catch {
       return false;
