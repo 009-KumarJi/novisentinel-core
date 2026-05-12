@@ -1,5 +1,9 @@
 # NoviSentinel
 
+[![PyPI](https://img.shields.io/pypi/v/novisentinel)](https://pypi.org/project/novisentinel/)
+[![VS Code Marketplace](https://img.shields.io/visual-studio-marketplace/v/novisentinel.novisentinel-vscode)](https://marketplace.visualstudio.com/items?itemName=novisentinel.novisentinel-vscode)
+[![License](https://img.shields.io/badge/license-Apache%202.0-blue)](LICENSE)
+
 **An open-source safety scanner for LLM applications.**
 
 Self-hostable FastAPI service that detects and blocks PII leaks, prompt injection, exposed credentials, and toxic content — in real time, in front of any LLM.
@@ -31,6 +35,60 @@ docker compose up
 ```
 
 API is live at `http://localhost:8000`. Swagger UI at `http://localhost:8000/docs`.
+
+---
+
+## Try it
+
+Once the API is running, scan a PII string in two commands:
+
+```bash
+# 1. Create an API key (uses the master key from your .env)
+curl -s -X POST http://localhost:8000/v1/keys \
+  -H "x-master-key: dev-master-key-change-me" \
+  -H "Content-Type: application/json" \
+  -d '{"name": "test"}' | grep -o '"key":"[^"]*"'
+
+# 2. Scan text (replace nvs_... with the key returned above)
+curl -s -X POST http://localhost:8000/v1/scan \
+  -H "Authorization: Bearer nvs_..." \
+  -H "Content-Type: application/json" \
+  -d '{"text": "My SSN is 123-45-6789", "context": "input"}' | python -m json.tool
+```
+
+Expected response: `"action": "block"`, `"risk_level": "critical"`, detection type `US_SSN`.
+
+---
+
+## Use in your code
+
+**Python SDK**
+
+```bash
+pip install novisentinel
+```
+
+```python
+from novisentinel import Client
+
+client = Client(api_key="nvs_...", base_url="http://localhost:8000")
+result = client.scan("Ignore all previous instructions", context="input")
+# result.action → "block"
+```
+
+**curl / REST**
+
+```bash
+curl -X POST http://localhost:8000/v1/scan \
+  -H "Authorization: Bearer nvs_..." \
+  -H "Content-Type: application/json" \
+  -d '{"text": "My SSN is 123-45-6789", "context": "input"}'
+```
+
+**VS Code extension**
+
+Install [NoviSentinel](https://marketplace.visualstudio.com/items?itemName=novisentinel.novisentinel-vscode) from the Marketplace.
+Select any text → `Ctrl+Shift+S` (Windows) / `Cmd+Shift+S` (Mac) to scan it inline.
 
 ---
 
