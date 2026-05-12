@@ -99,3 +99,9 @@ temp/
 # Docker (optional local)
 # ========================
 docker-compose.override.yml
+
+# ========================
+# Postman desktop client artifacts
+# ========================
+.postman/
+postman/
