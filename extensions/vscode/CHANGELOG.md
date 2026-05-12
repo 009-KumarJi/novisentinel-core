@@ -1,5 +1,11 @@
 # Changelog
 
+## [1.0.1] — 2026-05-13
+
+### Fixed
+
+- Connection check now uses `/health` instead of `/healthz`, fixing repeated 404s in the API logs and the disconnected status bar when the API was actually running.
+
 ## [1.0.0] — 2026-05-12
 
 ### Added
