@@ -156,7 +156,7 @@ class Client:
         Never raises — safe to use for polling without try/except.
         """
         try:
-            resp = self._http.get("/healthz")
+            resp = self._http.get("/health")
             return resp.is_success
         except Exception:
             return False
@@ -286,7 +286,7 @@ class AsyncClient:
         Never raises — safe to use for polling without try/except.
         """
         try:
-            resp = await self._http.get("/healthz")
+            resp = await self._http.get("/health")
             return resp.is_success
         except Exception:
             return False
