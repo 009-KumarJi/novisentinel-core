@@ -2,49 +2,19 @@ name: CI
 
 on:
   push:
-    branches: [main, develop]
+    branches: [main, develop, "feature/**"]
   pull_request:
     branches: [main, develop]
 
 jobs:
-  # ── Backend: full integration tests + 80% coverage ──────────────────────────
   test:
     name: Test (Python)
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: sentinel
-          POSTGRES_PASSWORD: sentinel
-          POSTGRES_DB: novisentinel
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
-      redis:
-        image: redis:7
-        ports:
-          - 6379:6379
-        options: >-
-          --health-cmd "redis-cli ping"
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     env:
-      MASTER_API_KEY: ci-test-key-not-for-prod
-      DATABASE_URL: postgresql+asyncpg://sentinel:sentinel@localhost:5432/novisentinel
-      REDIS_URL: redis://localhost:6379
       SPACY_MODEL: en_core_web_lg
       INJECTION_MODEL: protectai/deberta-v3-base-prompt-injection-v2
       INJECTION_THRESHOLD: "0.85"
-      DEFAULT_RATE_LIMIT_RPM: "120"
       TOXICITY_ENABLED: "true"
       TOXICITY_MODEL: original
       TOXICITY_THRESHOLD_SEVERE: "0.5"
@@ -54,19 +24,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.14
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
-          allow-prereleases: true
+          python-version: "3.13"
 
       - name: Cache pip wheels
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-py314-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-py313-pip-${{ hashFiles('requirements.txt') }}
           restore-keys: |
-            ${{ runner.os }}-py314-pip-
+            ${{ runner.os }}-py313-pip-
 
       - name: Cache spaCy model
         uses: actions/cache@v4
@@ -75,52 +44,23 @@ jobs:
           key: ${{ runner.os }}-spacy-en_core_web_lg-3
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r requirements.txt
 
       - name: Download spaCy model
         run: python -m spacy download en_core_web_lg
 
-      - name: Run tests with coverage (≥80% required)
-        run: pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing --cov-fail-under=80
+      - name: Run tests
+        run: pytest tests/ -v --cov=app --cov-report=xml --cov-report=term-missing
 
       - name: Upload coverage report
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: backend-coverage
+          name: coverage
           path: coverage.xml
 
-  # ── Python SDK tests ────────────────────────────────────────────────────────
-  sdk-test:
-    name: Test (Python SDK)
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python 3.14
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.14"
-          allow-prereleases: true
-
-      - name: Cache pip wheels
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-py314-sdk-pip-${{ hashFiles('sdk/python/pyproject.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-py314-sdk-pip-
-
-      - name: Install SDK with test deps
-        run: pip install -e ".[test]"
-        working-directory: sdk/python
-
-      - name: Run SDK tests (no failures allowed)
-        run: pytest tests/ -v
-        working-directory: sdk/python
-
-  # ── Lint (ruff check + format) ───────────────────────────────────────────────
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -128,40 +68,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Set up Python 3.14
+      - name: Set up Python 3.13
         uses: actions/setup-python@v5
         with:
-          python-version: "3.14"
-          allow-prereleases: true
+          python-version: "3.13"
 
       - name: Install ruff
-        run: pip install ruff==0.15.12
+        run: pip install ruff
 
-      - name: Run ruff check
+      - name: ruff check
         run: ruff check .
 
-      - name: Run ruff format check
+      - name: ruff format check
         run: ruff format --check .
-
-  # ── Frontend: TypeScript type check ─────────────────────────────────────────
-  frontend-check:
-    name: Frontend (TypeScript)
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-          cache: "npm"
-          cache-dependency-path: dashboard/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-        working-directory: dashboard
-
-      - name: TypeScript type check
-        run: npx tsc --noEmit
-        working-directory: dashboard

@@ -1,0 +1,368 @@
+"""Transparent proxy endpoints — redact secrets before forwarding to AI providers,
+restore placeholders in the response so callers never notice.
+
+Drop-in replacements:
+  OPENAI_BASE_URL=http://localhost:8000      ->  POST /v1/chat/completions
+  ANTHROPIC_BASE_URL=http://localhost:8000   ->  POST /v1/messages
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+import time
+from collections.abc import AsyncIterator
+from typing import Any
+
+from fastapi import APIRouter, Header, Request
+from fastapi.responses import StreamingResponse
+
+from app.core.anonymizer import AnonymizationMap
+from app.gateway.schemas import (
+    ChatCompletionRequest,
+    ChatCompletionResponse,
+    ChatMessage,
+)
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+
+# ── helpers ───────────────────────────────────────────────────────────────────
+
+
+def _bearer(authorization: str | None) -> str:
+    if not authorization:
+        return ""
+    return authorization.removeprefix("Bearer ").strip()
+
+
+def _sse(data: str) -> bytes:
+    return f"data: {data}\n\n".encode()
+
+
+def _sse_event(event: str, data: Any) -> bytes:
+    return f"event: {event}\ndata: {json.dumps(data)}\n\n".encode()
+
+
+def _anthropic_error_body(message: str) -> dict:
+    return {"type": "error", "error": {"type": "invalid_request_error", "message": message}}
+
+
+def _to_internal(body: dict) -> ChatCompletionRequest:
+    """Convert Anthropic request shape -> internal OpenAI ChatCompletionRequest."""
+    messages: list[dict] = []
+    if "system" in body:
+        messages.append({"role": "system", "content": body["system"]})
+    messages.extend(body.get("messages", []))
+    return ChatCompletionRequest(
+        model=body.get("model", "claude-3-5-sonnet-20241022"),
+        messages=[ChatMessage(**m) for m in messages],
+        max_tokens=body.get("max_tokens"),
+        temperature=body.get("temperature"),
+        top_p=body.get("top_p"),
+        stream=body.get("stream", False),
+        stop=body.get("stop_sequences"),
+    )
+
+
+def _to_anthropic_response(response: ChatCompletionResponse, original_model: str) -> dict:
+    """Convert internal ChatCompletionResponse -> Anthropic response shape."""
+    content: list[dict] = []
+    stop_reason = "end_turn"
+    for choice in response.choices:
+        if choice.message and choice.message.content:
+            content.append({"type": "text", "text": str(choice.message.content)})
+        if choice.finish_reason == "length":
+            stop_reason = "max_tokens"
+        elif choice.finish_reason == "tool_calls":
+            stop_reason = "tool_use"
+    result: dict = {
+        "id": response.id or f"msg_{int(time.time())}",
+        "type": "message",
+        "role": "assistant",
+        "model": original_model,
+        "content": content,
+        "stop_reason": stop_reason,
+        "stop_sequence": None,
+    }
+    if response.usage:
+        result["usage"] = {
+            "input_tokens": response.usage.prompt_tokens,
+            "output_tokens": response.usage.completion_tokens,
+        }
+    return result
+
+
+async def _scan_and_redact(
+    request: ChatCompletionRequest,
+) -> tuple[ChatCompletionRequest, AnonymizationMap, str | None]:
+    """Scan each message. Block on injection/critical risk; redact PII/secrets otherwise.
+
+    Returns (possibly_modified_request, anon_map, block_reason_or_None).
+    """
+    from app.core.scanner import scan
+
+    anon_map = AnonymizationMap()
+    new_messages: list[ChatMessage] = list(request.messages)
+
+    for i, msg in enumerate(request.messages):
+        if not isinstance(msg.content, str) or not msg.content:
+            continue
+        result = await scan(msg.content, "input", {})
+        if result.action == "block":
+            return request, anon_map, f"Blocked: {result.risk_level} risk detected in message"
+        redactable = [d for d in result.detections if d.detector in ("pii", "secrets", "urls", "custom")]
+        if redactable:
+            redacted_text = anon_map.redact(msg.content, redactable)
+            new_messages[i] = msg.model_copy(update={"content": redacted_text})
+
+    return request.model_copy(update={"messages": new_messages}), anon_map, None
+
+
+def _restore_response(response: ChatCompletionResponse, anon_map: AnonymizationMap) -> ChatCompletionResponse:
+    if anon_map.is_empty:
+        return response
+    new_choices = []
+    for choice in response.choices:
+        if choice.message and isinstance(choice.message.content, str):
+            restored = anon_map.restore(choice.message.content)
+            new_choices.append(
+                choice.model_copy(update={"message": choice.message.model_copy(update={"content": restored})})
+            )
+        else:
+            new_choices.append(choice)
+    return response.model_copy(update={"choices": new_choices})
+
+
+# ── streaming generators ──────────────────────────────────────────────────────
+
+
+async def _openai_stream_gen(
+    request: ChatCompletionRequest,
+    api_key: str,
+    anon_map: AnonymizationMap,
+) -> AsyncIterator[bytes]:
+    from app.gateway.reliability import get_circuit_breaker
+    from app.gateway.router import get_provider
+
+    provider, provider_name = get_provider(request.model)
+    cb = get_circuit_breaker(provider_name)
+    cb.check()
+    tail = ""
+    try:
+        async for chunk in provider.stream(request, api_key):
+            if not anon_map.is_empty:
+                new_choices = []
+                for choice in chunk.choices:
+                    if choice.delta.content:
+                        safe, tail = anon_map.restore_chunk(choice.delta.content, tail)
+                        new_choices.append(
+                            choice.model_copy(
+                                update={"delta": choice.delta.model_copy(update={"content": safe or None})}
+                            )
+                        )
+                    else:
+                        new_choices.append(choice)
+                chunk = chunk.model_copy(update={"choices": new_choices})
+            yield _sse(json.dumps(chunk.model_dump(exclude_none=True)))
+        cb.record_success()
+    except Exception:
+        cb.record_failure()
+        raise
+
+    if tail:
+        restored = anon_map.restore(tail)
+        if restored:
+            flush = {
+                "id": f"novisentinel-{int(time.time())}",
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": request.model,
+                "choices": [{"index": 0, "delta": {"content": restored}, "finish_reason": None}],
+            }
+            yield _sse(json.dumps(flush))
+    yield _sse("[DONE]")
+
+
+async def _anthropic_stream_gen(
+    request: ChatCompletionRequest,
+    api_key: str,
+    anon_map: AnonymizationMap,
+    original_model: str,
+) -> AsyncIterator[bytes]:
+    from app.gateway.reliability import get_circuit_breaker
+    from app.gateway.router import get_provider
+
+    provider, provider_name = get_provider(request.model)
+    cb = get_circuit_breaker(provider_name)
+    cb.check()
+
+    msg_id = f"msg_{int(time.time())}"
+    yield _sse_event(
+        "message_start",
+        {
+            "type": "message_start",
+            "message": {
+                "id": msg_id,
+                "type": "message",
+                "role": "assistant",
+                "model": original_model,
+                "content": [],
+                "stop_reason": None,
+                "usage": {"input_tokens": 0, "output_tokens": 0},
+            },
+        },
+    )
+    yield _sse_event(
+        "content_block_start",
+        {
+            "type": "content_block_start",
+            "index": 0,
+            "content_block": {"type": "text", "text": ""},
+        },
+    )
+    yield b'event: ping\ndata: {"type":"ping"}\n\n'
+
+    tail = ""
+    stop_reason = "end_turn"
+    try:
+        async for chunk in provider.stream(request, api_key):
+            for choice in chunk.choices:
+                if choice.delta.content:
+                    safe, tail = anon_map.restore_chunk(choice.delta.content, tail)
+                    if safe:
+                        yield _sse_event(
+                            "content_block_delta",
+                            {
+                                "type": "content_block_delta",
+                                "index": 0,
+                                "delta": {"type": "text_delta", "text": safe},
+                            },
+                        )
+                if choice.finish_reason == "length":
+                    stop_reason = "max_tokens"
+        cb.record_success()
+    except Exception:
+        cb.record_failure()
+        raise
+
+    if tail:
+        restored = anon_map.restore(tail)
+        if restored:
+            yield _sse_event(
+                "content_block_delta",
+                {
+                    "type": "content_block_delta",
+                    "index": 0,
+                    "delta": {"type": "text_delta", "text": restored},
+                },
+            )
+
+    yield _sse_event("content_block_stop", {"type": "content_block_stop", "index": 0})
+    yield _sse_event(
+        "message_delta",
+        {
+            "type": "message_delta",
+            "delta": {"stop_reason": stop_reason, "stop_sequence": None},
+            "usage": {"output_tokens": 0},
+        },
+    )
+    yield _sse_event("message_stop", {"type": "message_stop"})
+
+
+# ── endpoints ─────────────────────────────────────────────────────────────────
+
+
+@router.post("/v1/chat/completions")
+async def openai_proxy(
+    request: ChatCompletionRequest,
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    from fastapi import HTTPException
+
+    from app.gateway.errors import GatewayError, normalize_error
+    from app.gateway.orchestrator import _resolve_upstream_key, handle_completion
+
+    api_key = _bearer(authorization)
+    redacted_req, anon_map, block_reason = await _scan_and_redact(request)
+
+    if block_reason:
+        raise HTTPException(
+            status_code=400,
+            detail={"error": {"message": block_reason, "type": "content_filter"}},
+        )
+
+    if request.stream:
+        from app.gateway.router import get_provider
+
+        _, provider_name = get_provider(request.model)
+        resolved_key = api_key or _resolve_upstream_key(provider_name)
+        return StreamingResponse(
+            _openai_stream_gen(redacted_req, resolved_key, anon_map),
+            media_type="text/event-stream",
+        )
+
+    try:
+        response = await handle_completion(redacted_req, api_key)
+    except GatewayError as exc:
+        raise HTTPException(
+            status_code=exc.upstream_status or 502,
+            detail={"error": {"message": exc.message, "type": exc.error_type}},
+        ) from exc
+    except Exception as exc:
+        err = normalize_error(exc, "unknown")
+        raise HTTPException(
+            status_code=err.upstream_status or 502,
+            detail={"error": {"message": err.message, "type": err.error_type}},
+        ) from exc
+
+    return _restore_response(response, anon_map)
+
+
+@router.post("/v1/messages")
+async def anthropic_proxy(
+    raw_request: Request,
+    x_api_key: str | None = Header(default=None, alias="x-api-key"),
+    authorization: str | None = Header(default=None, alias="Authorization"),
+):
+    from fastapi import HTTPException
+
+    from app.gateway.errors import GatewayError, normalize_error
+    from app.gateway.orchestrator import _resolve_upstream_key, handle_completion
+
+    body: dict = await raw_request.json()
+    original_model: str = body.get("model", "claude-3-5-sonnet-20241022")
+    api_key = x_api_key or _bearer(authorization) or ""
+
+    internal_req = _to_internal(body)
+    redacted_req, anon_map, block_reason = await _scan_and_redact(internal_req)
+
+    if block_reason:
+        raise HTTPException(status_code=400, detail=_anthropic_error_body(block_reason))
+
+    if body.get("stream"):
+        from app.gateway.router import get_provider
+
+        _, provider_name = get_provider(internal_req.model)
+        resolved_key = api_key or _resolve_upstream_key(provider_name)
+        return StreamingResponse(
+            _anthropic_stream_gen(redacted_req, resolved_key, anon_map, original_model),
+            media_type="text/event-stream",
+        )
+
+    try:
+        response = await handle_completion(redacted_req, api_key)
+    except GatewayError as exc:
+        raise HTTPException(
+            status_code=exc.upstream_status or 502,
+            detail=_anthropic_error_body(exc.message),
+        ) from exc
+    except Exception as exc:
+        err = normalize_error(exc, "anthropic")
+        raise HTTPException(
+            status_code=err.upstream_status or 502,
+            detail=_anthropic_error_body(err.message),
+        ) from exc
+
+    return _to_anthropic_response(_restore_response(response, anon_map), original_model)
