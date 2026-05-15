@@ -31,9 +31,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from app.api import scan  # noqa: E402
+from app.api import proxy, scan  # noqa: E402
 
 app.include_router(scan.router, tags=["Scan"])
+app.include_router(proxy.router, tags=["Proxy"])
 
 
 @app.get("/health", tags=["Health"])
