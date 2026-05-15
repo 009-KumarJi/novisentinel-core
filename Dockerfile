@@ -1,18 +1,18 @@
-FROM python:3.12-slim
+FROM python:3.13-slim
 
 WORKDIR /app
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+    gcc \
+    && rm -rf /var/lib/lists/*
 
 COPY requirements.txt .
-# Install CPU-only PyTorch first — avoids pulling 1GB+ of CUDA GPU packages
-# (PyPI default for torch is the CUDA build; we only use device=-1 / CPU)
+
+# Install CPU-only PyTorch first — avoids pulling 1 GB+ of CUDA packages.
 RUN pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Pre-download NLP models so startup is instant (no runtime downloads)
+# Pre-download NLP models so container startup is instant.
 ARG SPACY_MODEL=en_core_web_lg
 RUN python -m spacy download ${SPACY_MODEL}
 
