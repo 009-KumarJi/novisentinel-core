@@ -282,7 +282,7 @@ async def openai_proxy(
     from fastapi import HTTPException
 
     from app.gateway.errors import GatewayError, normalize_error
-    from app.gateway.orchestrator import _resolve_upstream_key, handle_completion
+    from app.gateway.orchestrator import _resolve_upstream_key, call_provider_only
 
     api_key = _bearer(authorization)
     redacted_req, anon_map, block_reason = await _scan_and_redact(request)
@@ -304,7 +304,7 @@ async def openai_proxy(
         )
 
     try:
-        response = await handle_completion(redacted_req, api_key)
+        response = await call_provider_only(redacted_req, api_key)
     except GatewayError as exc:
         raise HTTPException(
             status_code=exc.upstream_status or 502,
@@ -329,7 +329,7 @@ async def anthropic_proxy(
     from fastapi import HTTPException
 
     from app.gateway.errors import GatewayError, normalize_error
-    from app.gateway.orchestrator import _resolve_upstream_key, handle_completion
+    from app.gateway.orchestrator import _resolve_upstream_key, call_provider_only
 
     body: dict = await raw_request.json()
     original_model: str = body.get("model", "claude-3-5-sonnet-20241022")
@@ -352,7 +352,7 @@ async def anthropic_proxy(
         )
 
     try:
-        response = await handle_completion(redacted_req, api_key)
+        response = await call_provider_only(redacted_req, api_key)
     except GatewayError as exc:
         raise HTTPException(
             status_code=exc.upstream_status or 502,

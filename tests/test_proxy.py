@@ -137,7 +137,7 @@ async def test_openai_proxy_allows_clean_request():
 
     with (
         patch("app.api.proxy._scan_and_redact", new=AsyncMock(return_value=(clean_req, AnonymizationMap(), None))),
-        patch("app.gateway.orchestrator.handle_completion", new=AsyncMock(return_value=_fake_response("4"))),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(return_value=_fake_response("4"))),
     ):
         async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as c:
             resp = await c.post(
@@ -170,7 +170,7 @@ async def test_openai_proxy_restores_placeholders():
 
     with (
         patch("app.api.proxy._scan_and_redact", new=AsyncMock(return_value=(redacted_req, anon_map, None))),
-        patch("app.gateway.orchestrator.handle_completion", new=AsyncMock(return_value=llm_response)),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(return_value=llm_response)),
     ):
         async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as c:
             resp = await c.post(
@@ -223,7 +223,7 @@ async def test_anthropic_proxy_returns_anthropic_shape():
     with (
         patch("app.api.proxy._scan_and_redact", new=AsyncMock(return_value=(clean_req, AnonymizationMap(), None))),
         patch(
-            "app.gateway.orchestrator.handle_completion",
+            "app.gateway.orchestrator.call_provider_only",
             new=AsyncMock(return_value=_fake_response("Hello back!", "claude-3-5-sonnet-20241022")),
         ),
     ):
@@ -260,7 +260,7 @@ async def test_anthropic_proxy_system_message_converted():
 
     with (
         patch("app.core.scanner.scan", new=AsyncMock(side_effect=lambda t, *a, **k: _allow_scan(t))),
-        patch("app.gateway.orchestrator.handle_completion", new=AsyncMock(side_effect=_capture_completion)),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(side_effect=_capture_completion)),
     ):
         async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as c:
             await c.post(
