@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.1.0] — 2026-05-16
+
+### Changed
+
+- API key is now optional — no prompt on first run for local self-hosted NoviSentinel.
+- `Authorization` header is only sent when an API key is actually configured.
+- Updated description to reflect privacy proxy positioning.
+- Fixed GitHub repository URL in README.
+
 ## [1.0.1] — 2026-05-13
 
 ### Fixed
