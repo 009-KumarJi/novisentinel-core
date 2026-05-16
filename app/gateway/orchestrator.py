@@ -87,3 +87,30 @@ async def handle_completion(
             )
 
     return response
+
+
+async def call_provider_only(
+    request: ChatCompletionRequest,
+    upstream_api_key: str = "",
+) -> ChatCompletionResponse:
+    """Bypass scanner — used by the proxy, which does its own scan/redact/restore."""
+    from app.gateway.errors import GatewayError, normalize_error
+    from app.gateway.reliability import resilient_call
+
+    provider, provider_name = get_provider(request.model)
+    key = upstream_api_key or _resolve_upstream_key(provider_name)
+
+    t0 = time.monotonic()
+    try:
+        response = await resilient_call(
+            lambda: provider.complete(request, key),
+            provider_name,
+        )
+    except GatewayError:
+        raise
+    except Exception as exc:
+        raise normalize_error(exc, provider_name) from exc
+
+    elapsed_ms = round((time.monotonic() - t0) * 1000)
+    logger.info("proxy.completion provider=%s model=%s latency_ms=%d", provider_name, request.model, elapsed_ms)
+    return response
