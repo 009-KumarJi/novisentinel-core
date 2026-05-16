@@ -55,6 +55,7 @@ pnpm-lock.yaml
 *.swp
 *.swo
 *~
+*.vsix
 .DS_Store
 Thumbs.db
 
