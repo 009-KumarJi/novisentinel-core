@@ -4,7 +4,7 @@ import respx
 
 from novisentinel import AuthError, Client, RateLimitError, ServiceUnavailableError, ValidationError
 
-from .conftest import API_KEY, API_URL, BATCH_RESPONSE, SCAN_RESPONSE
+from .conftest import API_KEY, API_URL, SCAN_RESPONSE
 
 
 @pytest.fixture
@@ -97,16 +97,21 @@ class TestScan:
 class TestScanBatch:
     @respx.mock
     def test_happy_path(self, client):
-        respx.post(f"{API_URL}/v1/scan/batch").mock(return_value=httpx.Response(200, json=BATCH_RESPONSE))
+        allow_resp = {**SCAN_RESPONSE, "scan_id": "scan_def456", "safe": True, "action": "allow", "detections": []}
+        route = respx.post(f"{API_URL}/v1/scan")
+        route.side_effect = [
+            httpx.Response(200, json=SCAN_RESPONSE),
+            httpx.Response(200, json=allow_resp),
+        ]
         results = client.scan_batch(["text1", "text2"])
         assert len(results) == 2
         assert results[0].action == "block"
         assert results[1].action == "allow"
 
     @respx.mock
-    def test_401_raises_auth_error(self, client):
-        respx.post(f"{API_URL}/v1/scan/batch").mock(return_value=httpx.Response(401))
-        with pytest.raises(AuthError):
+    def test_error_propagates(self, client):
+        respx.post(f"{API_URL}/v1/scan").mock(return_value=httpx.Response(503))
+        with pytest.raises(ServiceUnavailableError):
             client.scan_batch(["text"])
 
 
@@ -116,15 +121,15 @@ class TestScanBatch:
 class TestHealth:
     @respx.mock
     def test_returns_true_on_200(self, client):
-        respx.get(f"{API_URL}/healthz").mock(return_value=httpx.Response(200))
+        respx.get(f"{API_URL}/health").mock(return_value=httpx.Response(200))
         assert client.health() is True
 
     @respx.mock
     def test_returns_false_on_503(self, client):
-        respx.get(f"{API_URL}/healthz").mock(return_value=httpx.Response(503))
+        respx.get(f"{API_URL}/health").mock(return_value=httpx.Response(503))
         assert client.health() is False
 
     def test_returns_false_on_connection_error(self, client):
         with respx.mock:
-            respx.get(f"{API_URL}/healthz").mock(side_effect=httpx.ConnectError("refused"))
+            respx.get(f"{API_URL}/health").mock(side_effect=httpx.ConnectError("refused"))
             assert client.health() is False
