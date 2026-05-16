@@ -81,13 +81,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   // --- First-run onboarding (F-409) ---
   await runOnboardingIfNeeded(context, client);
 
-  // Prompt for key if none is configured
-  const hasKey = !!(await context.secrets.get("novisentinel.apiKey"));
-  if (!hasKey && !process.env["NOVISENTINEL_API_KEY"]) {
-    vscode.window
-      .showInformationMessage("NoviSentinel: No API key configured.", "Set API Key")
-      .then((btn) => btn && vscode.commands.executeCommand("novisentinel.setApiKey"));
-  }
+  // API key is optional for local self-hosted NoviSentinel.
+  // Only prompt when an explicit key was previously set then removed,
+  // which would indicate a hosted-version workflow.
 }
 
 export function deactivate(): void {

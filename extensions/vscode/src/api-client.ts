@@ -26,7 +26,7 @@ export class NoviSentinelClient {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${this.apiKey}`,
+          ...(this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {}),
         },
         body: JSON.stringify({ text, context: scanCtx }),
         signal: controller.signal,
