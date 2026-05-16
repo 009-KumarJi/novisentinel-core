@@ -9,7 +9,7 @@ from .exceptions import AuthError, RateLimitError, ServiceUnavailableError
 from .exceptions import ValidationError as ScanValidationError
 from .models import ScanResult
 
-_DEFAULT_BASE = "https://api.novisentinel.com"
+_DEFAULT_BASE = "http://localhost:8000"
 _RETRY_STATUSES = {502, 503, 504}
 _BACKOFF = [0.5, 1.0, 2.0]
 
@@ -45,13 +45,13 @@ class Client:
     """Synchronous NoviSentinel client.
 
     Args:
-        api_key: Bearer token used for all requests.
-        base_url: Base URL of the NoviSentinel API.
+        api_key: Bearer token for the hosted API. Leave empty for local self-hosted use.
+        base_url: Base URL of the NoviSentinel API (default: http://localhost:8000).
         timeout: Request timeout in seconds.
         retries: Number of retry attempts on transient 5xx errors (default 3).
 
     Example:
-        >>> client = Client(api_key="nvs_...")
+        >>> client = Client()          # local NoviSentinel on :8000
         >>> result = client.scan("Ignore previous instructions")
         >>> print(result.action)
         block
@@ -59,15 +59,18 @@ class Client:
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str = "",
         base_url: str = _DEFAULT_BASE,
         timeout: float = 30.0,
         retries: int = 3,
     ) -> None:
         self._retries = retries
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         self._http = httpx.Client(
             base_url=base_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=headers,
             timeout=httpx.Timeout(timeout),
         )
 
@@ -130,7 +133,7 @@ class Client:
         context: str | None = None,
         config: dict | None = None,
     ) -> list[ScanResult]:
-        """Scan multiple texts in one request.
+        """Scan multiple texts sequentially, returning one result per input.
 
         Args:
             texts: List of texts to scan.
@@ -139,16 +142,8 @@ class Client:
 
         Returns:
             List of ScanResult, one per input text, in order.
-
-        Raises:
-            AuthError: Invalid or missing API key.
-            RateLimitError: Too many requests.
-            ValidationError: Malformed request.
-            ServiceUnavailableError: Server unreachable or returning 5xx after retries.
         """
-        body = {"texts": [_build_body(t, context, config) for t in texts]}
-        resp = self._post_with_retry("/v1/scan/batch", json=body)
-        return [ScanResult.model_validate(r) for r in resp.json()]
+        return [self.scan(t, context, config) for t in texts]
 
     def health(self) -> bool:
         """Return True if the API is reachable and healthy, False otherwise.
@@ -176,13 +171,13 @@ class AsyncClient:
     """Async NoviSentinel client (use with ``async with``).
 
     Args:
-        api_key: Bearer token used for all requests.
-        base_url: Base URL of the NoviSentinel API.
+        api_key: Bearer token for the hosted API. Leave empty for local self-hosted use.
+        base_url: Base URL of the NoviSentinel API (default: http://localhost:8000).
         timeout: Request timeout in seconds.
         retries: Number of retry attempts on transient 5xx errors (default 3).
 
     Example:
-        >>> async with AsyncClient(api_key="nvs_...") as client:
+        >>> async with AsyncClient() as client:
         ...     result = await client.scan("My SSN is 123-45-6789")
         ...     print(result.has_pii)
         True
@@ -190,15 +185,18 @@ class AsyncClient:
 
     def __init__(
         self,
-        api_key: str,
+        api_key: str = "",
         base_url: str = _DEFAULT_BASE,
         timeout: float = 30.0,
         retries: int = 3,
     ) -> None:
         self._retries = retries
+        headers = {}
+        if api_key:
+            headers["Authorization"] = f"Bearer {api_key}"
         self._http = httpx.AsyncClient(
             base_url=base_url.rstrip("/"),
-            headers={"Authorization": f"Bearer {api_key}"},
+            headers=headers,
             timeout=httpx.Timeout(timeout),
         )
 
@@ -260,7 +258,7 @@ class AsyncClient:
         context: str | None = None,
         config: dict | None = None,
     ) -> list[ScanResult]:
-        """Scan multiple texts in one request asynchronously.
+        """Scan multiple texts concurrently, returning one result per input.
 
         Args:
             texts: List of texts to scan.
@@ -269,16 +267,8 @@ class AsyncClient:
 
         Returns:
             List of ScanResult, one per input text, in order.
-
-        Raises:
-            AuthError: Invalid or missing API key.
-            RateLimitError: Too many requests.
-            ValidationError: Malformed request.
-            ServiceUnavailableError: Server unreachable or returning 5xx after retries.
         """
-        body = {"texts": [_build_body(t, context, config) for t in texts]}
-        resp = await self._post_with_retry("/v1/scan/batch", json=body)
-        return [ScanResult.model_validate(r) for r in resp.json()]
+        return list(await asyncio.gather(*[self.scan(t, context, config) for t in texts]))
 
     async def health(self) -> bool:
         """Return True if the API is reachable and healthy, False otherwise.

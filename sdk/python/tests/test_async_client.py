@@ -4,7 +4,7 @@ import respx
 
 from novisentinel import AsyncClient, AuthError, RateLimitError, ServiceUnavailableError, ValidationError
 
-from .conftest import API_KEY, API_URL, BATCH_RESPONSE, SCAN_RESPONSE
+from .conftest import API_KEY, API_URL, SCAN_RESPONSE
 
 pytestmark = pytest.mark.asyncio
 
@@ -79,14 +79,20 @@ class TestAsyncScan:
 class TestAsyncScanBatch:
     @respx.mock
     async def test_happy_path(self, client):
-        respx.post(f"{API_URL}/v1/scan/batch").mock(return_value=httpx.Response(200, json=BATCH_RESPONSE))
+        allow_resp = {**SCAN_RESPONSE, "scan_id": "scan_def456", "safe": True, "action": "allow", "detections": []}
+        respx.post(f"{API_URL}/v1/scan").mock(
+            side_effect=[
+                httpx.Response(200, json=SCAN_RESPONSE),
+                httpx.Response(200, json=allow_resp),
+            ]
+        )
         results = await client.scan_batch(["text1", "text2"])
         assert len(results) == 2
 
     @respx.mock
-    async def test_403_raises_auth_error(self, client):
-        respx.post(f"{API_URL}/v1/scan/batch").mock(return_value=httpx.Response(403))
-        with pytest.raises(AuthError):
+    async def test_error_propagates(self, client):
+        respx.post(f"{API_URL}/v1/scan").mock(return_value=httpx.Response(503))
+        with pytest.raises(ServiceUnavailableError):
             await client.scan_batch(["text"])
 
 
@@ -96,10 +102,10 @@ class TestAsyncScanBatch:
 class TestAsyncHealth:
     @respx.mock
     async def test_returns_true_on_200(self, client):
-        respx.get(f"{API_URL}/healthz").mock(return_value=httpx.Response(200))
+        respx.get(f"{API_URL}/health").mock(return_value=httpx.Response(200))
         assert await client.health() is True
 
     @respx.mock
     async def test_returns_false_on_503(self, client):
-        respx.get(f"{API_URL}/healthz").mock(return_value=httpx.Response(503))
+        respx.get(f"{API_URL}/health").mock(return_value=httpx.Response(503))
         assert await client.health() is False
