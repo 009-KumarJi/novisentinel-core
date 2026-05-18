@@ -31,14 +31,13 @@ Out of the box, NoviSentinel intercepts and redacts:
 
 | Type | Example | Replaced with |
 |------|---------|---------------|
-| API keys & tokens | `sk-ant-api03-xxx`, `ghp_xxx`, `AKIA…` | `<REDACTED_API_KEY_001>` |
-| Secrets in code | private keys, JWTs, OAuth secrets | `<REDACTED_SECRET_001>` |
-| Customer PII | emails, phone, SSN, credit cards, IBAN | `<REDACTED_EMAIL_001>` |
-| Internal URLs / IPs | bare IP addresses, IDN homographs | `<REDACTED_IP_ONLY_001>` |
+| API keys & tokens | `sk-ant-api03-xxx`, `ghp_xxx`, `AKIA…` | `<REDACTED_AWS_ACCESS_KEY_001>` |
+| Secrets in code | private keys, JWTs, passwords, AWS secrets | `<REDACTED_JWT_TOKEN_001>` |
+| Customer PII | emails, phone, SSN, credit cards, IBAN | `<REDACTED_EMAIL_ADDRESS_001>` |
+| Internal URLs / IPs | URLs, bare IP addresses | `<REDACTED_URL_001>` |
 | Prompt injection | jailbreaks, role hijacks, exfil attempts | blocked outright |
-| Malicious output | `rm -rf`, hidden exfiltration patterns | blocked outright |
 
-**Same placeholder for the same value** means the agent can still reason about context. "Fix the bug where `AWS_KEY=<REDACTED_API_KEY_001>` isn't loading" works fine — the agent tells you what to change, NoviSentinel swaps the real key back in the response. The model never saw your secret.
+**Same placeholder for the same value** means the agent can still reason about context. "Fix the bug where `AWS_KEY=<REDACTED_AWS_ACCESS_KEY_001>` isn't loading" works fine — the agent tells you what to change, NoviSentinel swaps the real key back in the response. The model never saw your secret.
 
 ---
 
@@ -73,7 +72,7 @@ See the [examples/](examples/) directory for per-tool setup guides.
                     └────────────────────────────────────────────┘
 ```
 
-Detection runs across 7 parallel detectors — Presidio (PII), regex (secrets), DeBERTa-v3 (injection), Detoxify (toxicity), URL safety, code injection, and optional custom HTTP endpoints. Added latency is ~50ms p95 on English text up to 2KB on a laptop CPU. Streaming is preserved end-to-end.
+Detection runs across 7 parallel detectors — Presidio (PII), regex (secrets), DeBERTa-v3 (injection), Detoxify (toxicity), URL safety, code injection, and optional custom HTTP endpoints. Typical added latency is ~300ms p95 on English text up to 2KB on a laptop CPU; this is dominated by transformer inference for the injection + toxicity detectors. Disabling those two via env config brings p95 below 50ms when only regex/PII detection is needed. Streaming is preserved end-to-end.
 
 ---
 
@@ -112,8 +111,8 @@ All settings are optional except for the provider key. NoviSentinel starts witho
 Honest limitations:
 
 - **Not a corporate DLP.** A motivated developer can unset the env var. This protects you from yourself and from accidents, not from a malicious insider.
-- **Not a model-side guarantee.** If the model receives a secret in a previous turn (before NoviSentinel was in the loop), it may repeat it in later responses. Output scanning catches most such cases but isn't bulletproof.
-- **Streaming output cannot be blocked mid-token.** Inputs are blocked before they leave your machine. Streamed responses are scanned at stream end, not preemptively mid-token.
+- **Not a model-side guarantee.** If the model receives a secret in a previous turn (before NoviSentinel was in the loop), it may repeat it in later responses. NoviSentinel scans your prompts on the way out — once a secret has reached the model in an earlier session, this proxy can't pull it back.
+- **Output content is not scanned today.** The proxy only restores placeholders in responses; it does not block whatever the LLM generates. Scanning model output for new secrets/exfil patterns is on the roadmap.
 - **Detectors are imperfect.** Presidio misses some unusual PII formats. The injection model has a ~2-5% false positive rate. We tune toward over-redacting.
 
 ---

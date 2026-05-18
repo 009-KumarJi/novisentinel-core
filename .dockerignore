@@ -1,0 +1,68 @@
+# Secrets — never copy into images
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+.secrets/
+
+# Python build/cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.venv/
+venv/
+env/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+build/
+dist/
+
+# Node (for any embedded UI)
+node_modules/
+npm-debug.log
+yarn-error.log
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Docs / private plans
+.private/
+docs/
+*.md
+!README.md
+
+# Tests
+tests/
+test_*.py
+
+# CI
+.github/
+.gitlab-ci.yml
+
+# Build artifacts
+*.vsix
+sdk/python/dist/
+sdk/python/build/
+sdk/python/*.egg-info/
+
+# Frontend (not part of backend image)
+dashboard/
+extensions/
