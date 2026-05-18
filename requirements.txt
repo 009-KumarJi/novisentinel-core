@@ -1,6 +1,6 @@
 fastapi>=0.115.5
 uvicorn[standard]>=0.32.1
-pydantic-settings>=2.6.1
+pydantic-settings>=2.14.1
 httpx>=0.28.1
 # PII detection
 presidio-analyzer>=2.2.356
