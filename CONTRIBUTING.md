@@ -8,7 +8,6 @@ Thanks for your interest in contributing! NoviSentinel is an AI safety firewall 
 
 - Python 3.12+
 - Docker & Docker Compose
-- Node.js 18+ (only if working on the dashboard)
 - Git
 
 ### Local Development Setup
@@ -60,17 +59,6 @@ uvicorn app.main:app --reload --port 8000
 ```
 
 The API is live at `http://localhost:8000`. Swagger docs at `http://localhost:8000/docs`.
-
-### Dashboard (Optional)
-
-```bash
-cd dashboard
-cp .env.local.example .env.local
-npm install
-npm run dev
-```
-
-Dashboard runs at `http://localhost:3001`.
 
 ### Running Tests
 
@@ -320,7 +308,6 @@ app/
 └── config.py     # Pydantic settings
 
 sdk/python/       # Python SDK (pip install novisentinel)
-dashboard/        # Next.js admin dashboard
 tests/            # pytest test suite
 ```
 
@@ -349,7 +336,6 @@ If you're adding a new detector:
 ### Style
 
 - **Python**: Follow PEP 8. Use type hints. Use `async`/`await` for I/O.
-- **TypeScript** (dashboard): Follow the existing Next.js + TailwindCSS patterns.
 - **Commits**: Use the Git Convention documented above.
 - **Tests**: Every new feature or bug fix should include tests.
 
