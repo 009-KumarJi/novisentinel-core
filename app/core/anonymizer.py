@@ -53,9 +53,17 @@ class AnonymizationMap:
         return result
 
     def restore(self, text: str) -> str:
-        """Replace all placeholders with their original values."""
+        """Replace all placeholders with their original values.
+
+        Tolerates LLMs that strip angle brackets when echoing the placeholder
+        (e.g. Markdown formatters that drop `<...>` to avoid HTML-tag rendering).
+        Both `<REDACTED_TYPE_001>` and bare `REDACTED_TYPE_001` are restored.
+        """
         for placeholder, original in self.mapping.items():
             text = text.replace(placeholder, original)
+            bare = placeholder.strip("<>")
+            if bare != placeholder:
+                text = text.replace(bare, original)
         return text
 
     def restore_chunk(self, incoming: str, tail: str) -> tuple[str, str]:
