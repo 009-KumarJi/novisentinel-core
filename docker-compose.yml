@@ -1,8 +1,19 @@
 services:
   novisentinel:
     build: .
+    # Bind to loopback only by default — a privacy proxy on the public
+    # interface of a laptop joining hotel/cafe wifi is a wallet drain
+    # waiting to happen. Override with NOVISENTINEL_BIND=0.0.0.0 if you
+    # really want to expose it on the LAN.
     ports:
-      - "8000:8000"
+      - "${NOVISENTINEL_BIND:-127.0.0.1}:8000:8000"
     env_file:
       - .env
     restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

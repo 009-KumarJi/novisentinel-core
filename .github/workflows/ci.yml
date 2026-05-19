@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main, develop]
 
+# Principle of least privilege — CI only needs to read the repo.
+permissions:
+  contents: read
+
 jobs:
   test:
     name: Test (Python)
