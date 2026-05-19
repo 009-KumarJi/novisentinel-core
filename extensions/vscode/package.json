@@ -97,8 +97,8 @@
     "vscode:prepublish": "tsc -p ."
   },
   "devDependencies": {
-    "@types/node": "^22",
-    "@types/vscode": "^1.93.0",
-    "typescript": "^5.6.0"
+    "@types/node": "^25",
+    "@types/vscode": "^1.120.0",
+    "typescript": "^6.0.3"
   }
 }
