@@ -1,0 +1,206 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {} # manual override — fires every job regardless of version diff
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never cancel mid-publish — partial uploads to PyPI / GHCR are painful
+
+jobs:
+  # ── Decide which artifacts (if any) need to be republished ───────────────────
+  # Each artifact has its own version field. We publish *only* the ones whose
+  # version changed vs the previous commit on main. README typos / refactors
+  # ship nothing.
+  detect:
+    runs-on: ubuntu-latest
+    outputs:
+      sdk_changed: ${{ steps.diff.outputs.sdk_changed }}
+      sdk_version: ${{ steps.diff.outputs.sdk_version }}
+      vsce_changed: ${{ steps.diff.outputs.vsce_changed }}
+      vsce_version: ${{ steps.diff.outputs.vsce_version }}
+      docker_changed: ${{ steps.diff.outputs.docker_changed }}
+      docker_version: ${{ steps.diff.outputs.docker_version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # need HEAD^ to diff against
+      - name: Detect version changes
+        id: diff
+        shell: bash
+        run: |
+          set -euo pipefail
+          force_all="${{ github.event_name == 'workflow_dispatch' && 'true' || 'false' }}"
+          python3 - "$force_all" <<'PY'
+          import json, os, re, subprocess, sys, tomllib
+
+          force_all = sys.argv[1] == "true"
+
+          def read_at(ref, path):
+              if ref == "HEAD":
+                  try:
+                      with open(path, "rb") as f:
+                          return f.read()
+                  except FileNotFoundError:
+                      return b""
+              try:
+                  return subprocess.check_output(
+                      ["git", "show", f"{ref}:{path}"],
+                      stderr=subprocess.DEVNULL,
+                  )
+              except subprocess.CalledProcessError:
+                  return b""
+
+          def parse_sdk(data):
+              return tomllib.loads(data.decode())["project"]["version"] if data else ""
+
+          def parse_vsce(data):
+              return json.loads(data)["version"] if data else ""
+
+          def parse_docker(data):
+              if not data:
+                  return ""
+              m = re.search(rb'version="([^"]+)"', data)
+              return m.group(1).decode() if m else ""
+
+          sdk_curr    = parse_sdk(read_at("HEAD",  "sdk/python/pyproject.toml"))
+          sdk_prev    = parse_sdk(read_at("HEAD^", "sdk/python/pyproject.toml"))
+          vsce_curr   = parse_vsce(read_at("HEAD",  "extensions/vscode/package.json"))
+          vsce_prev   = parse_vsce(read_at("HEAD^", "extensions/vscode/package.json"))
+          docker_curr = parse_docker(read_at("HEAD",  "app/main.py"))
+          docker_prev = parse_docker(read_at("HEAD^", "app/main.py"))
+
+          def changed(curr, prev):
+              return bool(curr) and (force_all or curr != prev)
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"sdk_changed={'true' if changed(sdk_curr, sdk_prev) else 'false'}\n")
+              f.write(f"sdk_version={sdk_curr}\n")
+              f.write(f"vsce_changed={'true' if changed(vsce_curr, vsce_prev) else 'false'}\n")
+              f.write(f"vsce_version={vsce_curr}\n")
+              f.write(f"docker_changed={'true' if changed(docker_curr, docker_prev) else 'false'}\n")
+              f.write(f"docker_version={docker_curr}\n")
+
+          print(f"SDK:    {sdk_prev!r} -> {sdk_curr!r}  (publish: {changed(sdk_curr, sdk_prev)})")
+          print(f"VSCE:   {vsce_prev!r} -> {vsce_curr!r}  (publish: {changed(vsce_curr, vsce_prev)})")
+          print(f"Docker: {docker_prev!r} -> {docker_curr!r}  (publish: {changed(docker_curr, docker_prev)})")
+          PY
+
+  # ── Python SDK → PyPI ───────────────────────────────────────────────────────
+  # Uses PyPI Trusted Publishing (OIDC) — no long-lived API token.
+  # First-time setup: at https://pypi.org/manage/account/publishing/ register a
+  # pending publisher with:
+  #   PyPI project name : novisentinel
+  #   Owner             : 009-KumarJi
+  #   Repository name   : novisentinel-core
+  #   Workflow filename : release.yml
+  #   Environment name  : pypi
+  publish-sdk:
+    needs: detect
+    if: needs.detect.outputs.sdk_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write # required for OIDC token issuance
+    environment:
+      name: pypi
+      url: https://pypi.org/project/novisentinel/${{ needs.detect.outputs.sdk_version }}/
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Build sdist + wheel
+        working-directory: sdk/python
+        run: |
+          python -m pip install --upgrade build
+          python -m build
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          packages-dir: sdk/python/dist
+          print-hash: true
+
+  # ── VSCode extension → Marketplace ─────────────────────────────────────────
+  # Needs repo secret VSCE_PAT (Azure DevOps PAT, Marketplace > Manage scope).
+  # The `publisher` field in package.json must match a publisher you've
+  # already registered at https://marketplace.visualstudio.com/manage.
+  publish-vsce:
+    needs: detect
+    if: needs.detect.outputs.vsce_changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: extensions/vscode/package-lock.json
+      - name: Install deps
+        working-directory: extensions/vscode
+        run: npm ci
+      - name: Package .vsix
+        working-directory: extensions/vscode
+        run: npx --yes @vscode/vsce@latest package --no-dependencies
+      - name: Publish to Marketplace
+        working-directory: extensions/vscode
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx --yes @vscode/vsce@latest publish --no-dependencies --pat "$VSCE_PAT"
+      - name: Upload .vsix as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: novisentinel-vscode-${{ needs.detect.outputs.vsce_version }}.vsix
+          path: extensions/vscode/*.vsix
+          if-no-files-found: error
+
+  # ── Docker image → ghcr.io ─────────────────────────────────────────────────
+  # GHCR uses the auto-issued GITHUB_TOKEN — no extra secret.
+  # First-time setup: after the first push, go to:
+  #   https://github.com/users/<you>/packages/container/novisentinel-core/settings
+  # and flip visibility from "private" to "public" (or leave private if intended).
+  publish-docker:
+    needs: detect
+    if: needs.detect.outputs.docker_changed == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute tags + labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=raw,value=${{ needs.detect.outputs.docker_version }}
+            type=raw,value=latest
+            type=sha,prefix=sha-,format=short
+          labels: |
+            org.opencontainers.image.title=NoviSentinel
+            org.opencontainers.image.description=Privacy proxy for AI coding agents
+            org.opencontainers.image.version=${{ needs.detect.outputs.docker_version }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+      - name: Build + push image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
