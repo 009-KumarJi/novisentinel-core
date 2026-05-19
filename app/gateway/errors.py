@@ -58,7 +58,7 @@ def normalize_openai_error(exc: Exception, provider: str = "openai") -> GatewayE
     import httpx
 
     if isinstance(exc, httpx.TimeoutException):
-        return GatewayError("timeout", f"Upstream timed out ({provider})", 504, provider)
+        return GatewayError("timeout", "upstream timed out", 504, provider)
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
         error_type = _OAI_STATUS_MAP.get(status, "internal_error")
@@ -70,9 +70,9 @@ def normalize_openai_error(exc: Exception, provider: str = "openai") -> GatewayE
                 error_type = "provider_safety_block"
         except Exception:
             pass
-        return GatewayError(error_type, f"Upstream {provider} returned {status}", status, provider)
+        return GatewayError(error_type, f"upstream returned {status}", status, provider)
     if isinstance(exc, httpx.RequestError):
-        return GatewayError("provider_unavailable", f"Could not reach {provider}: {exc}", 502, provider)
+        return GatewayError("provider_unavailable", "could not reach upstream", 502, provider)
     return GatewayError("internal_error", str(exc), 502, provider)
 
 
@@ -80,7 +80,7 @@ def normalize_anthropic_error(exc: Exception) -> GatewayError:
     import httpx
 
     if isinstance(exc, httpx.TimeoutException):
-        return GatewayError("timeout", "Upstream timed out (anthropic)", 504, "anthropic")
+        return GatewayError("timeout", "upstream timed out", 504, "anthropic")
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
         _map: dict[int, ErrorType] = {
@@ -111,7 +111,7 @@ def normalize_google_error(exc: Exception) -> GatewayError:
     import httpx
 
     if isinstance(exc, httpx.TimeoutException):
-        return GatewayError("timeout", "Upstream timed out (google)", 504, "google")
+        return GatewayError("timeout", "upstream timed out", 504, "google")
     if isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
         try:
