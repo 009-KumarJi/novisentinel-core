@@ -5,6 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.security import BodySizeLimitMiddleware
 
 logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.INFO))
 
@@ -12,9 +13,13 @@ logging.basicConfig(level=getattr(logging, settings.log_level.upper(), logging.I
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     from app.core.scanner import warm_up_detectors
+    from app.gateway.providers.http import shutdown as shutdown_http
 
     warm_up_detectors()
-    yield
+    try:
+        yield
+    finally:
+        await shutdown_http()
 
 
 app = FastAPI(
@@ -24,11 +29,16 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Reject huge bodies before they reach the JSON parser.
+app.add_middleware(BodySizeLimitMiddleware, max_bytes=settings.max_request_bytes)
+
+# CORS — defaults to localhost-only. Wildcard requires explicit operator opt-in.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "x-api-key", "anthropic-version"],
+    allow_credentials=False,
 )
 
 from app.api import proxy, scan  # noqa: E402

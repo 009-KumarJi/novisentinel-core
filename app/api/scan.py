@@ -1,9 +1,10 @@
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 
 from app.core.scanner import scan
+from app.security import require_gateway_auth
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_gateway_auth)])
 
 
 class ScanConfig(BaseModel):
