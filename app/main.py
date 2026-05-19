@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="NoviSentinel",
     description="Privacy proxy for AI coding agents — keeps your secrets off the LLM.",
-    version="1.0.0",
+    version="1.0.1",
     lifespan=lifespan,
 )
 
@@ -49,4 +49,4 @@ app.include_router(proxy.router, tags=["Proxy"])
 
 @app.get("/health", tags=["Health"])
 async def health():
-    return {"status": "ok", "version": "1.0.0"}
+    return {"status": "ok", "version": "1.0.1"}

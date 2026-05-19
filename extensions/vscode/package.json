@@ -2,7 +2,7 @@
   "name": "novisentinel-vscode",
   "displayName": "NoviSentinel",
   "description": "Privacy proxy for AI coding agents — scan and redact secrets/PII before they reach the LLM.",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "publisher": "novisentinel",
   "repository": {
     "type": "git",
