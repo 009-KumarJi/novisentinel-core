@@ -61,21 +61,16 @@ def _get_engines():
 
 
 # Fallback SSN detection. Presidio's UsSsnRecognizer gives the dash pattern a
-# very low base score (0.05) and depends on context-enhancement to clear the
-# 0.35 threshold; that pipeline has been unreliable across Presidio versions,
-# so we run an independent regex with a context-word check as a safety net.
-_SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
-_SSN_CONTEXT = re.compile(r"\b(ssn|social\s*security|tax\s*id)\b", re.IGNORECASE)
+# very low base score (0.05) and only clears its 0.35 threshold with context
+# words — unreliable across Presidio versions, so we run an independent
+# regex that excludes structurally-invalid SSNs (000/666/9xx area, 00 group,
+# 0000 serial) instead of gating on English context.
+_SSN_PATTERN = re.compile(r"\b(?!000|666|9\d{2})\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b")
 
 
 def _ssn_fallback(text: str) -> list[DetectionResult]:
-    if not _SSN_CONTEXT.search(text):
-        return []
     out: list[DetectionResult] = []
     for m in _SSN_PATTERN.finditer(text):
-        area = m.group(0)[:3]
-        if area in ("000", "666") or area.startswith("9"):
-            continue
         out.append(
             DetectionResult(
                 detector="pii",
@@ -84,7 +79,7 @@ def _ssn_fallback(text: str) -> list[DetectionResult]:
                 redacted="[US_SSN]",
                 start=m.start(),
                 end=m.end(),
-                confidence=0.95,
+                confidence=0.9,
                 severity="critical",
             )
         )

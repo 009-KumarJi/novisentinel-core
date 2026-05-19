@@ -77,29 +77,40 @@ class InjectionDetector(Detector):
         return []
 
     async def scan_async(self, text: str, config: dict) -> list[DetectionResult]:
-        """Full async scan: rules first, then ML if no rule match."""
+        """Full async scan: rules first, then ML if no rule match.
+
+        The classifier model has a 512-token limit, so we scan a sliding
+        window (front, middle, back) and take the max score — otherwise an
+        attacker prefixing 500 chars of benign text bypasses the ML layer.
+        """
         rule_results = self.scan(text, config)
         if rule_results:
             return rule_results
 
-        # Layer 2: ML classifier for subtle injections
         threshold = config.get("injection_threshold", settings.injection_threshold)
         try:
             pipe = _get_pipeline()
-            result = await asyncio.to_thread(pipe, text[:512])  # truncate for model limits
-            label = result[0]["label"].upper()
-            score = result[0]["score"]
+            windows = _windows(text, size=480, overlap=80)
+            best_score = 0.0
+            best_text = text[:100]
+            for window in windows:
+                result = await asyncio.to_thread(pipe, window)
+                label = result[0]["label"].upper()
+                score = result[0]["score"]
+                if label == "INJECTION" and score > best_score:
+                    best_score = score
+                    best_text = window[:100]
 
-            if label == "INJECTION" and score >= threshold:
+            if best_score >= threshold:
                 return [
                     DetectionResult(
                         detector=self.name,
                         type="SUBTLE_INJECTION",
-                        text=text[:100] + ("..." if len(text) > 100 else ""),
+                        text=best_text + ("..." if len(text) > 100 else ""),
                         redacted="[INJECTION_ATTEMPT]",
                         start=0,
                         end=len(text),
-                        confidence=round(score, 4),
+                        confidence=round(best_score, 4),
                         severity="critical",
                     )
                 ]
@@ -107,3 +118,16 @@ class InjectionDetector(Detector):
             pass  # ML failure is non-fatal; rule layer still ran
 
         return []
+
+
+def _windows(text: str, size: int, overlap: int) -> list[str]:
+    """Return overlapping windows of `text`. At least one window, capped at 8."""
+    if len(text) <= size:
+        return [text]
+    step = max(size - overlap, 1)
+    out: list[str] = []
+    i = 0
+    while i < len(text) and len(out) < 8:
+        out.append(text[i : i + size])
+        i += step
+    return out
