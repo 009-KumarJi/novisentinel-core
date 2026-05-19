@@ -89,7 +89,13 @@ class Client:
                     continue
                 _raise_for_status(resp)
                 return resp
-            except httpx.ConnectError as exc:
+            except (
+                httpx.ConnectError,
+                httpx.ReadTimeout,
+                httpx.WriteTimeout,
+                httpx.PoolTimeout,
+                httpx.RemoteProtocolError,
+            ) as exc:
                 if attempt < self._retries:
                     time.sleep(_BACKOFF[min(attempt, len(_BACKOFF) - 1)])
                     last_exc = ServiceUnavailableError(str(exc))
