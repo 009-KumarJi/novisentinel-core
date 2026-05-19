@@ -4,15 +4,13 @@ import json
 import logging
 from collections.abc import AsyncIterator
 
-import httpx
-
 from app.gateway.providers.base import Provider
+from app.gateway.providers.http import get_client
 from app.gateway.schemas import ChatCompletionChunk, ChatCompletionRequest, ChatCompletionResponse
 
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.openai.com/v1"
-_TIMEOUT = httpx.Timeout(60.0)
 
 
 class OpenAIProvider(Provider):
@@ -27,13 +25,13 @@ class OpenAIProvider(Provider):
         payload = request.model_dump(exclude_none=True)
         payload["stream"] = False
 
-        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
-            resp = await client.post(
-                f"{self._base_url}/chat/completions",
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
-            )
-            resp.raise_for_status()
+        client = get_client("openai")
+        resp = await client.post(
+            f"{self._base_url}/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        resp.raise_for_status()
         return ChatCompletionResponse(**resp.json())
 
     async def stream(
@@ -44,15 +42,13 @@ class OpenAIProvider(Provider):
         payload = request.model_dump(exclude_none=True)
         payload["stream"] = True
 
-        async with (
-            httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client,
-            client.stream(
-                "POST",
-                f"{self._base_url}/chat/completions",
-                json=payload,
-                headers={"Authorization": f"Bearer {api_key}"},
-            ) as resp,
-        ):
+        client = get_client("openai")
+        async with client.stream(
+            "POST",
+            f"{self._base_url}/chat/completions",
+            json=payload,
+            headers={"Authorization": f"Bearer {api_key}"},
+        ) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):

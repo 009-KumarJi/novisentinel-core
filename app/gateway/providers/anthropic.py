@@ -11,9 +11,8 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
-
 from app.gateway.providers.base import Provider
+from app.gateway.providers.http import get_client
 from app.gateway.schemas import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -31,7 +30,6 @@ logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://api.anthropic.com/v1"
 _ANTHROPIC_VERSION = "2023-06-01"
-_TIMEOUT = httpx.Timeout(60.0)
 _DEFAULT_MAX_TOKENS = 4096
 
 
@@ -187,18 +185,17 @@ class AnthropicProvider(Provider):
     ) -> ChatCompletionResponse:
         payload = _to_anthropic(request)
 
-        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
-            resp = await client.post(
-                f"{_BASE_URL}/messages",
-                json=payload,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": _ANTHROPIC_VERSION,
-                    "content-type": "application/json",
-                },
-            )
-            resp.raise_for_status()
-
+        client = get_client("anthropic")
+        resp = await client.post(
+            f"{_BASE_URL}/messages",
+            json=payload,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": _ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            },
+        )
+        resp.raise_for_status()
         return _from_anthropic(resp.json(), request.model)
 
     async def stream(
@@ -212,19 +209,17 @@ class AnthropicProvider(Provider):
         msg_id = ""
         model_name = request.model
 
-        async with (
-            httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client,
-            client.stream(
-                "POST",
-                f"{_BASE_URL}/messages",
-                json=payload,
-                headers={
-                    "x-api-key": api_key,
-                    "anthropic-version": _ANTHROPIC_VERSION,
-                    "content-type": "application/json",
-                },
-            ) as resp,
-        ):
+        client = get_client("anthropic")
+        async with client.stream(
+            "POST",
+            f"{_BASE_URL}/messages",
+            json=payload,
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": _ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            },
+        ) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):

@@ -11,9 +11,8 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-import httpx
-
 from app.gateway.providers.base import Provider
+from app.gateway.providers.http import get_client
 from app.gateway.schemas import (
     ChatCompletionChunk,
     ChatCompletionRequest,
@@ -30,7 +29,6 @@ from app.gateway.schemas import (
 logger = logging.getLogger(__name__)
 
 _BASE_URL = "https://generativelanguage.googleapis.com/v1beta"
-_TIMEOUT = httpx.Timeout(60.0)
 
 
 def _to_gemini(request: ChatCompletionRequest) -> tuple[str, dict[str, Any]]:
@@ -195,14 +193,13 @@ class GoogleProvider(Provider):
     ) -> ChatCompletionResponse:
         model_name, payload = _to_gemini(request)
 
-        async with httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client:
-            resp = await client.post(
-                f"{_BASE_URL}/models/{model_name}:generateContent",
-                json=payload,
-                params={"key": api_key},
-            )
-            resp.raise_for_status()
-
+        client = get_client("google")
+        resp = await client.post(
+            f"{_BASE_URL}/models/{model_name}:generateContent",
+            json=payload,
+            params={"key": api_key},
+        )
+        resp.raise_for_status()
         return _from_gemini(resp.json(), request.model)
 
     async def stream(
@@ -212,15 +209,13 @@ class GoogleProvider(Provider):
     ) -> AsyncIterator[ChatCompletionChunk]:
         model_name, payload = _to_gemini(request)
 
-        async with (
-            httpx.AsyncClient(timeout=_TIMEOUT, follow_redirects=False) as client,
-            client.stream(
-                "POST",
-                f"{_BASE_URL}/models/{model_name}:streamGenerateContent",
-                json=payload,
-                params={"key": api_key, "alt": "sse"},
-            ) as resp,
-        ):
+        client = get_client("google")
+        async with client.stream(
+            "POST",
+            f"{_BASE_URL}/models/{model_name}:streamGenerateContent",
+            json=payload,
+            params={"key": api_key, "alt": "sse"},
+        ) as resp:
             resp.raise_for_status()
             async for line in resp.aiter_lines():
                 if not line.startswith("data: "):
