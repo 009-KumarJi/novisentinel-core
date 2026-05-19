@@ -8,13 +8,15 @@ Drop-in replacements:
 
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
 import logging
 import time
 from collections.abc import AsyncIterator
 from typing import Any
 
-from fastapi import APIRouter, Header, Request
+from fastapi import APIRouter, Depends, Header, Request
 from fastapi.responses import StreamingResponse
 
 from app.core.anonymizer import AnonymizationMap
@@ -23,9 +25,10 @@ from app.gateway.schemas import (
     ChatCompletionResponse,
     ChatMessage,
 )
+from app.security import require_gateway_auth
 
 logger = logging.getLogger(__name__)
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(require_gateway_auth)])
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -162,15 +165,32 @@ async def _openai_stream_gen(
     api_key: str,
     anon_map: AnonymizationMap,
 ) -> AsyncIterator[bytes]:
+    """Stream OpenAI-compatible deltas to the caller.
+
+    Output is scanned every _SCAN_CHARS / _SCAN_MS while accumulating, but
+    chunks are held in a buffer until the most-recent scan returns: if the
+    scan says BLOCK, we emit an error event without having leaked the
+    buffered text. The provider stream is closed via `aclose()` on the way
+    out so we don't leak the upstream HTTP connection.
+    """
+    from app.core.scanner import scan as scan_text
     from app.gateway.reliability import get_circuit_breaker
     from app.gateway.router import get_provider
 
     provider, provider_name = get_provider(request.model)
     cb = get_circuit_breaker(provider_name)
     cb.check()
+
     tail = ""
+    accumulated = ""
+    last_scan_len = 0
+    last_scan_time = time.monotonic()
+    pending_scan: asyncio.Task | None = None
+    pending_buffer: list[bytes] = []
+
+    stream = provider.stream(request, api_key)
     try:
-        async for chunk in provider.stream(request, api_key):
+        async for chunk in stream:
             if not anon_map.is_empty:
                 new_choices = []
                 for choice in chunk.choices:
@@ -184,11 +204,56 @@ async def _openai_stream_gen(
                     else:
                         new_choices.append(choice)
                 chunk = chunk.model_copy(update={"choices": new_choices})
-            yield _sse(json.dumps(chunk.model_dump(exclude_none=True)))
+
+            for choice in chunk.choices:
+                if choice.delta.content:
+                    accumulated += choice.delta.content
+
+            chunk_bytes = _sse(json.dumps(chunk.model_dump(exclude_none=True)))
+
+            if pending_scan is not None:
+                # Hold the chunk until the prior scan completes — never leak
+                # past a block decision.
+                pending_buffer.append(chunk_bytes)
+                if pending_scan.done():
+                    block_msg = pending_scan.result()
+                    pending_scan = None
+                    if block_msg:
+                        yield _error_chunk(block_msg)
+                        yield _sse("[DONE]")
+                        return
+                    for buffered in pending_buffer:
+                        yield buffered
+                    pending_buffer.clear()
+            else:
+                yield chunk_bytes
+
+            chars_since = len(accumulated) - last_scan_len
+            ms_since = (time.monotonic() - last_scan_time) * 1000
+            if pending_scan is None and (chars_since >= _SCAN_CHARS or ms_since >= _SCAN_MS):
+                snap = accumulated
+                last_scan_len = len(accumulated)
+                last_scan_time = time.monotonic()
+                pending_scan = asyncio.create_task(_scan_output(snap, scan_text))
+
+        if pending_scan is not None:
+            block_msg = await pending_scan
+            if block_msg:
+                yield _error_chunk(block_msg)
+                yield _sse("[DONE]")
+                return
+            for buffered in pending_buffer:
+                yield buffered
+
         cb.record_success()
     except Exception:
         cb.record_failure()
         raise
+    finally:
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            with contextlib.suppress(Exception):
+                await aclose()
 
     if tail:
         restored = anon_map.restore(tail)
@@ -202,6 +267,28 @@ async def _openai_stream_gen(
             }
             yield _sse(json.dumps(flush))
     yield _sse("[DONE]")
+
+
+_SCAN_CHARS = 200
+_SCAN_MS = 100
+
+
+def _error_chunk(message: str) -> bytes:
+    payload = {
+        "error": {
+            "message": message,
+            "type": "content_filter",
+            "code": "content_policy_violation",
+        }
+    }
+    return _sse(json.dumps(payload))
+
+
+async def _scan_output(text: str, scan_fn) -> str | None:
+    result = await scan_fn(text, "output", {})
+    if result.action == "block":
+        return f"Content blocked by NoviSentinel: {result.risk_level} risk detected"
+    return None
 
 
 async def _anthropic_stream_gen(
@@ -243,15 +330,25 @@ async def _anthropic_stream_gen(
     )
     yield b'event: ping\ndata: {"type":"ping"}\n\n'
 
+    from app.core.scanner import scan as scan_text
+
     tail = ""
     stop_reason = "end_turn"
+    accumulated = ""
+    last_scan_len = 0
+    last_scan_time = time.monotonic()
+    pending_scan: asyncio.Task | None = None
+    pending_events: list[bytes] = []
+
+    stream = provider.stream(request, api_key)
     try:
-        async for chunk in provider.stream(request, api_key):
+        async for chunk in stream:
             for choice in chunk.choices:
                 if choice.delta.content:
                     safe, tail = anon_map.restore_chunk(choice.delta.content, tail)
                     if safe:
-                        yield _sse_event(
+                        accumulated += safe
+                        evt = _sse_event(
                             "content_block_delta",
                             {
                                 "type": "content_block_delta",
@@ -259,12 +356,55 @@ async def _anthropic_stream_gen(
                                 "delta": {"type": "text_delta", "text": safe},
                             },
                         )
+                        if pending_scan is not None:
+                            pending_events.append(evt)
+                            if pending_scan.done():
+                                block_msg = pending_scan.result()
+                                pending_scan = None
+                                if block_msg:
+                                    yield _sse_event(
+                                        "error",
+                                        {"type": "error", "error": {"type": "content_filter", "message": block_msg}},
+                                    )
+                                    yield _sse_event("message_stop", {"type": "message_stop"})
+                                    return
+                                for buf in pending_events:
+                                    yield buf
+                                pending_events.clear()
+                        else:
+                            yield evt
                 if choice.finish_reason == "length":
                     stop_reason = "max_tokens"
+
+            chars_since = len(accumulated) - last_scan_len
+            ms_since = (time.monotonic() - last_scan_time) * 1000
+            if pending_scan is None and (chars_since >= _SCAN_CHARS or ms_since >= _SCAN_MS):
+                snap = accumulated
+                last_scan_len = len(accumulated)
+                last_scan_time = time.monotonic()
+                pending_scan = asyncio.create_task(_scan_output(snap, scan_text))
+
+        if pending_scan is not None:
+            block_msg = await pending_scan
+            if block_msg:
+                yield _sse_event(
+                    "error",
+                    {"type": "error", "error": {"type": "content_filter", "message": block_msg}},
+                )
+                yield _sse_event("message_stop", {"type": "message_stop"})
+                return
+            for buf in pending_events:
+                yield buf
+
         cb.record_success()
     except Exception:
         cb.record_failure()
         raise
+    finally:
+        aclose = getattr(stream, "aclose", None)
+        if aclose is not None:
+            with contextlib.suppress(Exception):
+                await aclose()
 
     if tail:
         restored = anon_map.restore(tail)
