@@ -176,3 +176,87 @@ def test_restore_chunk_partial_prefix_at_end():
     safe, tail = m.restore_chunk("some text <REDACT", "")
     assert safe == "some text "
     assert tail == "<REDACT"
+
+
+# ── tolerant restore (LLM mangling) ──────────────────────────────────────────
+
+
+def test_restore_handles_dropped_brackets():
+    m = AnonymizationMap()
+    m.placeholder_for("john@a.com", "EMAIL_ADDRESS")
+    assert "john@a.com" in m.restore("contact REDACTED_EMAIL_ADDRESS_001 please")
+
+
+def test_restore_handles_lowercase():
+    m = AnonymizationMap()
+    m.placeholder_for("john@a.com", "EMAIL_ADDRESS")
+    assert "john@a.com" in m.restore("contact <redacted_email_address_001>")
+
+
+def test_restore_handles_dashes_for_underscores():
+    m = AnonymizationMap()
+    m.placeholder_for("john@a.com", "EMAIL_ADDRESS")
+    assert "john@a.com" in m.restore("contact <REDACTED-EMAIL-ADDRESS-001>")
+
+
+def test_restore_handles_missing_zero_padding():
+    m = AnonymizationMap()
+    m.placeholder_for("john@a.com", "EMAIL_ADDRESS")
+    assert "john@a.com" in m.restore("contact <REDACTED_EMAIL_ADDRESS_1>")
+
+
+def test_restore_leaves_unknown_placeholder_intact():
+    m = AnonymizationMap()
+    m.placeholder_for("john@a.com", "EMAIL_ADDRESS")
+    # Unknown placeholder number — no mapping; must not crash or replace blindly
+    text = "see <REDACTED_EMAIL_ADDRESS_999>"
+    assert m.restore(text) == text
+
+
+def test_restore_does_not_match_prose():
+    """English prose like 'the redacted email address 1 above' must NOT be
+    rewritten — otherwise the LLM can be tricked into producing text that
+    leaks the original PII at a location the user can't predict."""
+    m = AnonymizationMap()
+    m.placeholder_for("john@a.com", "EMAIL_ADDRESS")
+    prose = "the redacted email address 1 above"
+    assert m.restore(prose) == prose
+    prose2 = "see redacted email address 1 in the table"
+    assert m.restore(prose2) == prose2
+
+
+# ── overlap dedup (longer span wins) ──────────────────────────────────────────
+
+
+def test_redact_longer_span_wins_on_overlap():
+    """A wider connection-string match must not be shadowed by an inner password."""
+    m = AnonymizationMap()
+    text = "url postgresql://admin:s3cretpassword@db:5432/x end"
+    # Inner narrow match (e.g. GENERIC_PASSWORD-like) — should be dropped
+    inner = DetectionResult(
+        detector="secrets",
+        type="GENERIC_PASSWORD",
+        text="s3cretpassword",
+        redacted="[GENERIC_PASSWORD]",
+        start=text.index("s3cretpassword"),
+        end=text.index("s3cretpassword") + len("s3cretpassword"),
+        confidence=0.9,
+        severity="high",
+    )
+    outer = DetectionResult(
+        detector="secrets",
+        type="CONNECTION_STRING",
+        text="postgresql://admin:s3cretpassword@db:5432/x",
+        redacted="[CONNECTION_STRING]",
+        start=text.index("postgresql://"),
+        end=text.index("postgresql://") + len("postgresql://admin:s3cretpassword@db:5432/x"),
+        confidence=0.99,
+        severity="critical",
+    )
+    result = m.redact(text, [inner, outer])
+    assert "postgresql://" not in result
+    assert "admin" not in result
+    assert "s3cretpassword" not in result
+    assert "db:5432" not in result
+    # And the outer placeholder must restore the full original
+    assert m.restore(result) == text

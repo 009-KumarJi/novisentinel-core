@@ -88,3 +88,37 @@ def test_multiple_secrets_detected():
     types = {r.type for r in results}
     assert "AWS_ACCESS_KEY" in types
     assert "STRIPE_KEY" in types
+
+
+def test_postgres_connection_string_detected():
+    text = "DATABASE_URL=postgresql://admin:s3cret@db.example.com:5432/mydb"
+    results = _scan(text)
+    conn = [r for r in results if r.type == "CONNECTION_STRING"]
+    assert conn, "expected CONNECTION_STRING detection"
+    assert "admin" in conn[0].text and "s3cret" in conn[0].text
+    assert "db.example.com" in conn[0].text
+    assert conn[0].severity == "critical"
+
+
+def test_mongodb_srv_connection_string_detected():
+    text = "uri = mongodb+srv://user:p%40ssword@cluster0.mongodb.net/test"
+    results = _scan(text)
+    assert any(r.type == "CONNECTION_STRING" for r in results)
+
+
+def test_redis_connection_string_detected():
+    text = "redis://default:abc123XYZ@redis.example.com:6379"
+    results = _scan(text)
+    assert any(r.type == "CONNECTION_STRING" for r in results)
+
+
+def test_jdbc_connection_string_detected():
+    text = "jdbc:postgresql://localhost:5432/db?user=admin&password=s3cret"
+    results = _scan(text)
+    assert any(r.type == "CONNECTION_STRING" for r in results)
+
+
+def test_plain_url_without_credentials_not_a_connection_string():
+    text = "Connect to redis://localhost:6379 for cache."
+    results = _scan(text)
+    assert not any(r.type == "CONNECTION_STRING" for r in results)
