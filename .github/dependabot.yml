@@ -1,5 +1,6 @@
 version: 2
 updates:
+  # ── Python deps (requirements.txt + sdk/python) ──────────────────────────
   - package-ecosystem: pip
     directory: "/"
     schedule:
@@ -8,7 +9,13 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    # Bundle every Python dep update into a single PR per Monday — cuts the
+    # weekly review surface from up to 5 PRs to 1.
+    groups:
+      python:
+        patterns: ["*"]
 
+  # ── GitHub Actions versions in workflow files ────────────────────────────
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
@@ -17,16 +24,11 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    groups:
+      github-actions:
+        patterns: ["*"]
 
-  - package-ecosystem: npm
-    directory: "/dashboard"
-    schedule:
-      interval: weekly
-      day: monday
-    open-pull-requests-limit: 5
-    labels:
-      - dependencies
-
+  # ── VSCode extension npm deps ────────────────────────────────────────────
   - package-ecosystem: npm
     directory: "/extensions/vscode"
     schedule:
@@ -35,3 +37,6 @@ updates:
     open-pull-requests-limit: 5
     labels:
       - dependencies
+    groups:
+      vscode-extension:
+        patterns: ["*"]
