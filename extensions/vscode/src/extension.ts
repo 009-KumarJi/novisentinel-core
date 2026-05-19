@@ -12,7 +12,10 @@ async function getApiKey(context: vscode.ExtensionContext): Promise<string> {
   if (stored) return stored;
   const fromEnv = process.env["NOVISENTINEL_API_KEY"];
   if (fromEnv) return fromEnv;
-  return "dev-master-key";
+  // Empty string = unauthenticated. If the server enforces auth
+  // (MASTER_API_KEY_REQUIRED=true) the user will be prompted by the
+  // 401 error to run `NoviSentinel: Set API Key`.
+  return "";
 }
 
 function buildClient(context: vscode.ExtensionContext): NoviSentinelClient {

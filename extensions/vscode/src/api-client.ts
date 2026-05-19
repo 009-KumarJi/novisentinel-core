@@ -43,7 +43,9 @@ export class NoviSentinelClient {
       switch (resp.status) {
         case 401:
         case 403:
-          throw new NoviSentinelError("Invalid API key. Run: NoviSentinel: Set API Key");
+          throw new NoviSentinelError("Missing or invalid API key. Run: NoviSentinel: Set API Key");
+        case 413:
+          throw new NoviSentinelError("Selection is too large for the configured server limit.");
         case 429:
           throw new NoviSentinelError(
             `Rate limited. Try again in ${retryAfter ?? "a few"} seconds.`
