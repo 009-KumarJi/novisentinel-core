@@ -123,48 +123,65 @@ def _to_anthropic_response(response: ChatCompletionResponse, original_model: str
     return result
 
 
+_CONTEXT_FOR_KIND = {
+    "tool_result": "tool_output",
+    "tool_call_args": "tool_call_args",
+    "tool_use_input": "tool_call_args",
+    "tool_def_description": "tool_def",
+}
+
+
 async def _scan_and_redact(
     request: ChatCompletionRequest,
+    anon_map: AnonymizationMap | None = None,
 ) -> tuple[ChatCompletionRequest, AnonymizationMap, str | None]:
-    """Scan each message. Block on injection/critical risk; redact PII/secrets otherwise.
+    """Scan all message surfaces. Block on injection/critical risk; redact PII/secrets otherwise.
 
     Returns (possibly_modified_request, anon_map, block_reason_or_None).
     """
+    from app.config import settings
+    from app.core.scan_surfaces import request_surfaces
     from app.core.scanner import scan
 
-    anon_map = AnonymizationMap()
-    new_messages: list[ChatMessage] = list(request.messages)
+    if anon_map is None:
+        anon_map = AnonymizationMap()
+
+    working = request.model_copy(deep=True)
+    new_messages: list[ChatMessage] = list(working.messages)
 
     threat_detectors = {"injection", "toxicity", "code_injection"}
     redactable_detectors = {"pii", "secrets", "urls", "custom"}
 
-    for i, msg in enumerate(request.messages):
-        if not isinstance(msg.content, str) or not msg.content:
+    for surface in request_surfaces(working, new_messages, scan_tool_defs=settings.scan_tool_defs):
+        if not surface.text:
             continue
-        result = await scan(msg.content, "input", {})
+        context = _CONTEXT_FOR_KIND.get(surface.kind, "input")
+        result = await scan(surface.text, context, {})
 
         threats = [
             d for d in result.detections if d.detector in threat_detectors and d.severity in ("critical", "high")
         ]
         if threats:
             threat_types = [f"{d.detector}:{d.type}" for d in threats]
-            logger.info("[scan]    BLOCKED — threat detected: %s", ", ".join(threat_types))
+            logger.info("[scan]    BLOCKED — threat detected in %s: %s", surface.label, ", ".join(threat_types))
             return request, anon_map, f"Blocked: {result.risk_level} risk detected in message"
 
         redactable = [d for d in result.detections if d.detector in redactable_detectors]
         if redactable:
             types = [d.type for d in redactable]
-            logger.info("[scan]    detected %d privacy item(s): %s", len(redactable), ", ".join(types))
-            redacted_text = anon_map.redact(msg.content, redactable)
-            new_messages[i] = msg.model_copy(update={"content": redacted_text})
-            logger.info("[upstream sees] %s", redacted_text)
+            logger.info(
+                "[scan]    %s detected %d privacy item(s): %s", surface.label, len(redactable), ", ".join(types)
+            )
+            redacted = anon_map.redact(surface.text, redactable)
+            surface.replace(redacted)
+            logger.info("[upstream sees] %s", redacted)
 
     if anon_map.is_empty:
         logger.info("[scan]    clean — no redaction needed")
     else:
         logger.info("[redact]  forwarding upstream with %d placeholder(s)", len(anon_map.mapping))
 
-    return request.model_copy(update={"messages": new_messages}), anon_map, None
+    return working.model_copy(update={"messages": new_messages}), anon_map, None
 
 
 def _restore_response(response: ChatCompletionResponse, anon_map: AnonymizationMap) -> ChatCompletionResponse:
