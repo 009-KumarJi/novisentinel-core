@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import hashlib
 import json
 import logging
 import time
@@ -64,6 +65,31 @@ def _select_upstream_key(
             )
         return bearer
     return _resolve_upstream_key(provider_name)
+
+
+def _derive_session_id(x_session: str | None, messages: list[ChatMessage]) -> str | None:
+    """Derive a stable session ID from the header or the conversation prefix hash."""
+    if x_session:
+        return f"client:{x_session.strip()}"
+    prefix = messages[:-1]
+    if not prefix:
+        return None
+    try:
+        minimal = [
+            {
+                "role": m.role,
+                "content": m.content
+                if isinstance(m.content, str)
+                else [p.model_dump() for p in m.content]
+                if isinstance(m.content, list)
+                else None,
+            }
+            for m in prefix
+        ]
+        payload = json.dumps(minimal, sort_keys=True, default=str)
+    except Exception:
+        return None
+    return f"prefix:{hashlib.sha256(payload.encode('utf-8')).hexdigest()}"
 
 
 def _sse(data: str) -> bytes:
@@ -605,7 +631,9 @@ async def openai_proxy(
     request: ChatCompletionRequest,
     authorization: str | None = Header(default=None, alias="Authorization"),
     x_use_byok: str | None = Header(default=None, alias="X-Use-BYOK"),
+    x_session: str | None = Header(default=None, alias="X-Novisentinel-Session"),
 ):
+    from app.core.session_store import get_session_store
     from app.gateway.errors import GatewayError, normalize_error
     from app.gateway.orchestrator import call_provider_only
     from app.gateway.router import get_provider
@@ -614,41 +642,77 @@ async def openai_proxy(
     _, provider_name = get_provider(request.model)
     resolved_key = _select_upstream_key(api_key, x_use_byok, provider_name)
 
-    redacted_req, anon_map, block_reason = await _scan_and_redact(request)
+    session_id = _derive_session_id(x_session, request.messages)
 
-    if block_reason:
-        from fastapi import HTTPException
+    if session_id:
+        async with get_session_store().with_session(session_id) as anon_map:
+            redacted_req, anon_map, block_reason = await _scan_and_redact(request, anon_map)
+            if block_reason:
+                from fastapi import HTTPException
 
-        raise HTTPException(
-            status_code=400,
-            detail={"error": {"message": block_reason, "type": "content_filter"}},
-        )
+                raise HTTPException(
+                    status_code=400,
+                    detail={"error": {"message": block_reason, "type": "content_filter"}},
+                )
+            if request.stream:
+                return StreamingResponse(
+                    _openai_stream_gen(redacted_req, resolved_key, anon_map),
+                    media_type="text/event-stream",
+                )
+            try:
+                response = await call_provider_only(redacted_req, resolved_key)
+            except GatewayError as exc:
+                from fastapi import HTTPException
 
-    if request.stream:
-        return StreamingResponse(
-            _openai_stream_gen(redacted_req, resolved_key, anon_map),
-            media_type="text/event-stream",
-        )
+                raise HTTPException(
+                    status_code=exc.upstream_status or 502,
+                    detail={"error": {"message": exc.message, "type": exc.error_type}},
+                ) from exc
+            except Exception as exc:
+                from fastapi import HTTPException
 
-    try:
-        response = await call_provider_only(redacted_req, resolved_key)
-    except GatewayError as exc:
-        from fastapi import HTTPException
+                err = normalize_error(exc, "unknown")
+                raise HTTPException(
+                    status_code=err.upstream_status or 502,
+                    detail={"error": {"message": err.message, "type": err.error_type}},
+                ) from exc
+            return _restore_response(response, anon_map)
+    else:
+        redacted_req, anon_map, block_reason = await _scan_and_redact(request)
 
-        raise HTTPException(
-            status_code=exc.upstream_status or 502,
-            detail={"error": {"message": exc.message, "type": exc.error_type}},
-        ) from exc
-    except Exception as exc:
-        from fastapi import HTTPException
+        if block_reason:
+            from fastapi import HTTPException
 
-        err = normalize_error(exc, "unknown")
-        raise HTTPException(
-            status_code=err.upstream_status or 502,
-            detail={"error": {"message": err.message, "type": err.error_type}},
-        ) from exc
+            raise HTTPException(
+                status_code=400,
+                detail={"error": {"message": block_reason, "type": "content_filter"}},
+            )
 
-    return _restore_response(response, anon_map)
+        if request.stream:
+            return StreamingResponse(
+                _openai_stream_gen(redacted_req, resolved_key, anon_map),
+                media_type="text/event-stream",
+            )
+
+        try:
+            response = await call_provider_only(redacted_req, resolved_key)
+        except GatewayError as exc:
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=exc.upstream_status or 502,
+                detail={"error": {"message": exc.message, "type": exc.error_type}},
+            ) from exc
+        except Exception as exc:
+            from fastapi import HTTPException
+
+            err = normalize_error(exc, "unknown")
+            raise HTTPException(
+                status_code=err.upstream_status or 502,
+                detail={"error": {"message": err.message, "type": err.error_type}},
+            ) from exc
+
+        return _restore_response(response, anon_map)
 
 
 @router.post("/v1/messages")
@@ -657,7 +721,9 @@ async def anthropic_proxy(
     x_api_key: str | None = Header(default=None, alias="x-api-key"),
     authorization: str | None = Header(default=None, alias="Authorization"),
     x_use_byok: str | None = Header(default=None, alias="X-Use-BYOK"),
+    x_session: str | None = Header(default=None, alias="X-Novisentinel-Session"),
 ):
+    from app.core.session_store import get_session_store
     from app.gateway.errors import GatewayError, normalize_error
     from app.gateway.orchestrator import call_provider_only
     from app.gateway.router import get_provider
@@ -670,35 +736,44 @@ async def anthropic_proxy(
     _, provider_name = get_provider(internal_req.model)
     resolved_key = _select_upstream_key(bearer, x_use_byok, provider_name)
 
-    redacted_req, anon_map, block_reason = await _scan_and_redact(internal_req)
+    session_id = _derive_session_id(x_session, internal_req.messages)
 
-    if block_reason:
-        from fastapi import HTTPException
+    async def _run_scan(am=None):
+        return await _scan_and_redact(internal_req, am)
 
-        raise HTTPException(status_code=400, detail=_anthropic_error_body(block_reason))
+    async def _do_respond(redacted_req, anon_map, block_reason):
+        if block_reason:
+            from fastapi import HTTPException
 
-    if body.get("stream"):
-        return StreamingResponse(
-            _anthropic_stream_gen(redacted_req, resolved_key, anon_map, original_model),
-            media_type="text/event-stream",
-        )
+            raise HTTPException(status_code=400, detail=_anthropic_error_body(block_reason))
+        if body.get("stream"):
+            return StreamingResponse(
+                _anthropic_stream_gen(redacted_req, resolved_key, anon_map, original_model),
+                media_type="text/event-stream",
+            )
+        try:
+            response = await call_provider_only(redacted_req, resolved_key)
+        except GatewayError as exc:
+            from fastapi import HTTPException
 
-    try:
-        response = await call_provider_only(redacted_req, resolved_key)
-    except GatewayError as exc:
-        from fastapi import HTTPException
+            raise HTTPException(
+                status_code=exc.upstream_status or 502,
+                detail=_anthropic_error_body(exc.message),
+            ) from exc
+        except Exception as exc:
+            from fastapi import HTTPException
 
-        raise HTTPException(
-            status_code=exc.upstream_status or 502,
-            detail=_anthropic_error_body(exc.message),
-        ) from exc
-    except Exception as exc:
-        from fastapi import HTTPException
+            err = normalize_error(exc, "anthropic")
+            raise HTTPException(
+                status_code=err.upstream_status or 502,
+                detail=_anthropic_error_body(err.message),
+            ) from exc
+        return _to_anthropic_response(_restore_response(response, anon_map), original_model)
 
-        err = normalize_error(exc, "anthropic")
-        raise HTTPException(
-            status_code=err.upstream_status or 502,
-            detail=_anthropic_error_body(err.message),
-        ) from exc
-
-    return _to_anthropic_response(_restore_response(response, anon_map), original_model)
+    if session_id:
+        async with get_session_store().with_session(session_id) as anon_map:
+            redacted_req, anon_map, block_reason = await _scan_and_redact(internal_req, anon_map)
+            return await _do_respond(redacted_req, anon_map, block_reason)
+    else:
+        redacted_req, anon_map, block_reason = await _scan_and_redact(internal_req)
+        return await _do_respond(redacted_req, anon_map, block_reason)
