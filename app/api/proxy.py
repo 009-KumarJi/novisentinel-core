@@ -40,6 +40,32 @@ def _bearer(authorization: str | None) -> str:
     return authorization.removeprefix("Bearer ").strip()
 
 
+def _select_upstream_key(
+    bearer: str,
+    byok_header: str | None,
+    provider_name: str,
+) -> str:
+    """Env wins by default; bearer only honored when X-Use-BYOK is truthy."""
+    from fastapi import HTTPException
+
+    from app.gateway.orchestrator import _resolve_upstream_key
+
+    byok = (byok_header or "").strip().lower() in ("1", "true", "yes")
+    if byok:
+        if not bearer:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": {
+                        "message": "X-Use-BYOK requires Authorization or x-api-key",
+                        "type": "invalid_request",
+                    }
+                },
+            )
+        return bearer
+    return _resolve_upstream_key(provider_name)
+
+
 def _sse(data: str) -> bytes:
     return f"data: {data}\n\n".encode()
 
