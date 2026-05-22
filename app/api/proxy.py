@@ -463,39 +463,44 @@ async def _anthropic_stream_gen(
 async def openai_proxy(
     request: ChatCompletionRequest,
     authorization: str | None = Header(default=None, alias="Authorization"),
+    x_use_byok: str | None = Header(default=None, alias="X-Use-BYOK"),
 ):
-    from fastapi import HTTPException
-
     from app.gateway.errors import GatewayError, normalize_error
-    from app.gateway.orchestrator import _resolve_upstream_key, call_provider_only
+    from app.gateway.orchestrator import call_provider_only
+    from app.gateway.router import get_provider
 
     api_key = _bearer(authorization)
+    _, provider_name = get_provider(request.model)
+    resolved_key = _select_upstream_key(api_key, x_use_byok, provider_name)
+
     redacted_req, anon_map, block_reason = await _scan_and_redact(request)
 
     if block_reason:
+        from fastapi import HTTPException
+
         raise HTTPException(
             status_code=400,
             detail={"error": {"message": block_reason, "type": "content_filter"}},
         )
 
     if request.stream:
-        from app.gateway.router import get_provider
-
-        _, provider_name = get_provider(request.model)
-        resolved_key = api_key or _resolve_upstream_key(provider_name)
         return StreamingResponse(
             _openai_stream_gen(redacted_req, resolved_key, anon_map),
             media_type="text/event-stream",
         )
 
     try:
-        response = await call_provider_only(redacted_req, api_key)
+        response = await call_provider_only(redacted_req, resolved_key)
     except GatewayError as exc:
+        from fastapi import HTTPException
+
         raise HTTPException(
             status_code=exc.upstream_status or 502,
             detail={"error": {"message": exc.message, "type": exc.error_type}},
         ) from exc
     except Exception as exc:
+        from fastapi import HTTPException
+
         err = normalize_error(exc, "unknown")
         raise HTTPException(
             status_code=err.upstream_status or 502,
@@ -510,40 +515,45 @@ async def anthropic_proxy(
     raw_request: Request,
     x_api_key: str | None = Header(default=None, alias="x-api-key"),
     authorization: str | None = Header(default=None, alias="Authorization"),
+    x_use_byok: str | None = Header(default=None, alias="X-Use-BYOK"),
 ):
-    from fastapi import HTTPException
-
     from app.gateway.errors import GatewayError, normalize_error
-    from app.gateway.orchestrator import _resolve_upstream_key, call_provider_only
+    from app.gateway.orchestrator import call_provider_only
+    from app.gateway.router import get_provider
 
     body: dict = await raw_request.json()
     original_model: str = body.get("model", "claude-3-5-sonnet-20241022")
-    api_key = x_api_key or _bearer(authorization) or ""
+    bearer = x_api_key or _bearer(authorization) or ""
 
     internal_req = _to_internal(body)
+    _, provider_name = get_provider(internal_req.model)
+    resolved_key = _select_upstream_key(bearer, x_use_byok, provider_name)
+
     redacted_req, anon_map, block_reason = await _scan_and_redact(internal_req)
 
     if block_reason:
+        from fastapi import HTTPException
+
         raise HTTPException(status_code=400, detail=_anthropic_error_body(block_reason))
 
     if body.get("stream"):
-        from app.gateway.router import get_provider
-
-        _, provider_name = get_provider(internal_req.model)
-        resolved_key = api_key or _resolve_upstream_key(provider_name)
         return StreamingResponse(
             _anthropic_stream_gen(redacted_req, resolved_key, anon_map, original_model),
             media_type="text/event-stream",
         )
 
     try:
-        response = await call_provider_only(redacted_req, api_key)
+        response = await call_provider_only(redacted_req, resolved_key)
     except GatewayError as exc:
+        from fastapi import HTTPException
+
         raise HTTPException(
             status_code=exc.upstream_status or 502,
             detail=_anthropic_error_body(exc.message),
         ) from exc
     except Exception as exc:
+        from fastapi import HTTPException
+
         err = normalize_error(exc, "anthropic")
         raise HTTPException(
             status_code=err.upstream_status or 502,
