@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 from contextlib import asynccontextmanager
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -463,3 +464,45 @@ async def test_openai_stream_restores_tool_call_args_across_chunks():
     full_text = resp.text
     assert "alice.johnson@acme.com" in full_text
     assert "REDACTED_EMAIL_ADDRESS" not in full_text
+
+
+# ── session persistence ───────────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_session_header_reuses_map_across_requests(tmp_path: Path):
+    """Two requests sharing X-Novisentinel-Session must use the same placeholder numbering."""
+    from app.core.session_store import SessionStore
+
+    test_app = _make_test_app()
+    store = SessionStore(root=tmp_path / "sessions", ttl_seconds=3600)
+
+    with (
+        patch("app.core.scanner.scan", new=AsyncMock(side_effect=lambda t, *a, **k: _pii_scan(t))),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(return_value=_fake_response("ok"))),
+        patch("app.core.session_store.get_session_store", return_value=store),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=test_app), base_url="http://test") as c:
+            r1 = await c.post(
+                "/v1/chat/completions",
+                headers={"X-Novisentinel-Session": "my-dev-session"},
+                json={"model": "gpt-4o", "messages": [{"role": "user", "content": "email is john@example.com"}]},
+            )
+            r2 = await c.post(
+                "/v1/chat/completions",
+                headers={"X-Novisentinel-Session": "my-dev-session"},
+                json={
+                    "model": "gpt-4o",
+                    "messages": [
+                        {"role": "user", "content": "email is john@example.com"},
+                        {"role": "assistant", "content": "noted"},
+                        {"role": "user", "content": "email is john@example.com again"},
+                    ],
+                },
+            )
+
+    assert r1.status_code == 200
+    assert r2.status_code == 200
+    # Both requests must have used the same session file — verify one file on disk.
+    session_files = list((tmp_path / "sessions").glob("*.json"))
+    assert len(session_files) == 1
