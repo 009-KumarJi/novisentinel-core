@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     # Hard cap on request body bytes (DoS guard). Default 2 MiB.
     max_request_bytes: int = Field(default=2 * 1024 * 1024, ge=1024)
 
+    # ── Tool-surface scanning ────────────────────────────────────────────────
+    # When true, tool definition descriptions are also scanned for PII/secrets.
+    # Off by default: function.parameters JSON schema field names ("email",
+    # "phone_number") cause heavy Presidio false-positives.
+    scan_tool_defs: bool = Field(default=False, description="Scan tool definition descriptions for PII/secrets")
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _coerce_cors(cls, v):
