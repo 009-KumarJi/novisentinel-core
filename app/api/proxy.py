@@ -102,6 +102,19 @@ def _to_anthropic_response(response: ChatCompletionResponse, original_model: str
     for choice in response.choices:
         if choice.message and choice.message.content:
             content.append({"type": "text", "text": str(choice.message.content)})
+        for tc in (choice.message.tool_calls or []) if choice.message else []:
+            try:
+                parsed_input = json.loads(tc.function.arguments) if tc.function.arguments else {}
+            except (json.JSONDecodeError, ValueError):
+                parsed_input = {"_raw": tc.function.arguments}
+            content.append(
+                {
+                    "type": "tool_use",
+                    "id": tc.id or f"toolu_{int(time.time())}_{len(content)}",
+                    "name": tc.function.name or "",
+                    "input": parsed_input,
+                }
+            )
         if choice.finish_reason == "length":
             stop_reason = "max_tokens"
         elif choice.finish_reason == "tool_calls":
@@ -187,13 +200,12 @@ async def _scan_and_redact(
 def _restore_response(response: ChatCompletionResponse, anon_map: AnonymizationMap) -> ChatCompletionResponse:
     if anon_map.is_empty:
         return response
+    from app.core.scan_surfaces import restore_message
+
     new_choices = []
     for choice in response.choices:
-        if choice.message and isinstance(choice.message.content, str):
-            restored = anon_map.restore(choice.message.content)
-            new_choices.append(
-                choice.model_copy(update={"message": choice.message.model_copy(update={"content": restored})})
-            )
+        if choice.message:
+            new_choices.append(choice.model_copy(update={"message": restore_message(choice.message, anon_map)}))
         else:
             new_choices.append(choice)
     logger.info("[restore] swapped %d placeholder(s) back into response", len(anon_map.mapping))
