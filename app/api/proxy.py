@@ -438,7 +438,10 @@ async def _anthropic_stream_gen(
 
     from app.core.scanner import scan as scan_text
 
-    tail = ""
+    content_tail: str = ""
+    # tool_blocks[tc_index] = {block_index, args_tail, started, name, id}
+    tool_blocks: dict[int, dict] = {}
+    next_block_index: list[int] = [1]  # index 0 is the text block; tool_calls start at 1
     stop_reason = "end_turn"
     accumulated = ""
     last_scan_len = 0
@@ -451,7 +454,7 @@ async def _anthropic_stream_gen(
         async for chunk in stream:
             for choice in chunk.choices:
                 if choice.delta.content:
-                    safe, tail = anon_map.restore_chunk(choice.delta.content, tail)
+                    safe, content_tail = anon_map.restore_chunk(choice.delta.content, content_tail)
                     if safe:
                         accumulated += safe
                         evt = _sse_event(
@@ -479,8 +482,52 @@ async def _anthropic_stream_gen(
                                 pending_events.clear()
                         else:
                             yield evt
+
+                for tc in choice.delta.tool_calls or []:
+                    tc_idx = tc.index if tc.index is not None else 0
+                    if tc_idx not in tool_blocks:
+                        blk_idx = next_block_index[0]
+                        next_block_index[0] += 1
+                        tool_blocks[tc_idx] = {
+                            "block_index": blk_idx,
+                            "args_tail": "",
+                            "name": tc.function.name if tc.function else None,
+                            "id": tc.id,
+                        }
+                        tc_id = tc.id or f"toolu_{int(time.time())}_{tc_idx}"
+                        tc_name = (tc.function.name or "") if tc.function else ""
+                        yield _sse_event(
+                            "content_block_start",
+                            {
+                                "type": "content_block_start",
+                                "index": blk_idx,
+                                "content_block": {
+                                    "type": "tool_use",
+                                    "id": tc_id,
+                                    "name": tc_name,
+                                    "input": {},
+                                },
+                            },
+                        )
+
+                    if tc.function and tc.function.arguments:
+                        blk = tool_blocks[tc_idx]
+                        safe_args, new_tail = anon_map.restore_chunk(tc.function.arguments, blk["args_tail"])
+                        blk["args_tail"] = new_tail
+                        if safe_args:
+                            yield _sse_event(
+                                "content_block_delta",
+                                {
+                                    "type": "content_block_delta",
+                                    "index": blk["block_index"],
+                                    "delta": {"type": "input_json_delta", "partial_json": safe_args},
+                                },
+                            )
+
                 if choice.finish_reason == "length":
                     stop_reason = "max_tokens"
+                elif choice.finish_reason == "tool_calls" and tool_blocks:
+                    stop_reason = "tool_use"
 
             chars_since = len(accumulated) - last_scan_len
             ms_since = (time.monotonic() - last_scan_time) * 1000
@@ -512,8 +559,8 @@ async def _anthropic_stream_gen(
             with contextlib.suppress(Exception):
                 await aclose()
 
-    if tail:
-        restored = anon_map.restore(tail)
+    if content_tail:
+        restored = anon_map.restore(content_tail)
         if restored:
             yield _sse_event(
                 "content_block_delta",
@@ -523,6 +570,20 @@ async def _anthropic_stream_gen(
                     "delta": {"type": "text_delta", "text": restored},
                 },
             )
+
+    for blk in tool_blocks.values():
+        if blk["args_tail"]:
+            restored_args = anon_map.restore(blk["args_tail"])
+            if restored_args:
+                yield _sse_event(
+                    "content_block_delta",
+                    {
+                        "type": "content_block_delta",
+                        "index": blk["block_index"],
+                        "delta": {"type": "input_json_delta", "partial_json": restored_args},
+                    },
+                )
+        yield _sse_event("content_block_stop", {"type": "content_block_stop", "index": blk["block_index"]})
 
     yield _sse_event("content_block_stop", {"type": "content_block_stop", "index": 0})
     yield _sse_event(
