@@ -39,6 +39,20 @@ Out of the box, NoviSentinel intercepts and redacts:
 
 **Same placeholder for the same value** means the agent can still reason about context. "Fix the bug where `AWS_KEY=<REDACTED_AWS_ACCESS_KEY_001>` isn't loading" works fine — the agent tells you what to change, NoviSentinel swaps the real key back in the response. The model never saw your secret.
 
+### Tool-surface coverage
+
+Coding agents spend most of their time in tool calls — reading files, running shell commands, querying databases. NoviSentinel scans every surface that carries text:
+
+| Surface | Direction | Notes |
+|---------|-----------|-------|
+| `messages[].content` (string) | Request | User messages, assistant turns, tool-result strings |
+| `messages[].content[]` (Anthropic blocks) | Request | `text`, `tool_use.input`, `tool_result.content` |
+| `messages[].tool_calls[].function.arguments` | Request | JSON arguments emitted by the model in assistant turns |
+| `delta.content` (stream) | Response | Streamed text delta — placeholders restored chunk-by-chunk |
+| `delta.tool_calls[].function.arguments` (stream) | Response | Streamed tool-call args — placeholder reassembly across chunk boundaries |
+| `choices[].message` (non-stream) | Response | Full non-streaming response message |
+| `tools[].function.description` | Request | Optional; disabled by default (`SCAN_TOOL_DEFS=false`) to avoid false-positives on JSON schema field names |
+
 ---
 
 ## Supported clients
@@ -104,6 +118,54 @@ GOOGLE_API_KEY=AIza...
 
 All settings are optional except for the provider key. NoviSentinel starts without any API keys; it will return a 502 if you proxy a request without the relevant key configured.
 
+### BYOK (Bring Your Own Key)
+
+By default, NoviSentinel uses the server-side env key (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GOOGLE_API_KEY`) for all upstream calls. Any bearer token or `x-api-key` header sent by your client is silently ignored — this prevents IDE/agent vestigial auth headers from breaking upstream calls.
+
+To forward your own key instead, add `X-Use-BYOK: true` to the request:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Authorization: Bearer sk-your-key" \
+  -H "X-Use-BYOK: true" \
+  -H "Content-Type: application/json" \
+  -d '{"model":"gpt-4o","messages":[{"role":"user","content":"hi"}]}'
+```
+
+If `X-Use-BYOK: true` is set but no bearer is supplied, the request is rejected with HTTP 400.
+
+### Session persistence
+
+By default each request starts a fresh anonymization map, so there is no state between calls. For multi-turn conversations where the same secret must map to the same placeholder across turns — even across proxy restarts — send `X-Novisentinel-Session` with an opaque identifier of your choice:
+
+```bash
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "X-Novisentinel-Session: my-dev-session-1" \
+  -H "Content-Type: application/json" \
+  -d '...'
+```
+
+NoviSentinel persists the anonymization map to `~/.novisentinel/sessions/` (configurable via `SESSION_DIR`). Files are cleaned up after `SESSION_TTL_HOURS` hours of inactivity (default 24 h).
+
+**Privacy note:** Session files contain the original plaintext values next to their placeholders (so the proxy can restore them in responses). They are stored with mode `0600` under a `0700` directory. To wipe all session data:
+
+```bash
+python scripts/purge_sessions.py --all
+```
+
+Or to remove only expired files:
+
+```bash
+python scripts/purge_sessions.py
+```
+
+Additional session-related env vars:
+
+```env
+SESSION_DIR=~/.novisentinel/sessions   # where session files live
+SESSION_TTL_HOURS=24                   # evict files older than this
+```
+
 ---
 
 ## What it's not
@@ -112,7 +174,7 @@ Honest limitations:
 
 - **Not a corporate DLP.** A motivated developer can unset the env var. This protects you from yourself and from accidents, not from a malicious insider.
 - **Not a model-side guarantee.** If the model receives a secret in a previous turn (before NoviSentinel was in the loop), it may repeat it in later responses. NoviSentinel scans your prompts on the way out — once a secret has reached the model in an earlier session, this proxy can't pull it back.
-- **Output content is not scanned today.** The proxy only restores placeholders in responses; it does not block whatever the LLM generates. Scanning model output for new secrets/exfil patterns is on the roadmap.
+- **Output content is not scanned.** The proxy restores placeholders in responses; it does not block new secrets the LLM might hallucinate. Scanning model output for novel secrets/exfil patterns is on the roadmap.
 - **Detectors are imperfect.** Presidio misses some unusual PII formats. The injection model has a ~2-5% false positive rate. We tune toward over-redacting.
 
 ---
