@@ -231,12 +231,14 @@ async def _openai_stream_gen(
     from app.core.scanner import scan as scan_text
     from app.gateway.reliability import get_circuit_breaker
     from app.gateway.router import get_provider
+    from app.gateway.schemas import FunctionCall, ToolCall
 
     provider, provider_name = get_provider(request.model)
     cb = get_circuit_breaker(provider_name)
     cb.check()
 
-    tail = ""
+    content_tail: str = ""
+    tool_arg_tails: dict[int, str] = {}
     accumulated = ""
     last_scan_len = 0
     last_scan_time = time.monotonic()
@@ -249,12 +251,34 @@ async def _openai_stream_gen(
             if not anon_map.is_empty:
                 new_choices = []
                 for choice in chunk.choices:
+                    delta_updates: dict = {}
+
                     if choice.delta.content:
-                        safe, tail = anon_map.restore_chunk(choice.delta.content, tail)
+                        safe, content_tail = anon_map.restore_chunk(choice.delta.content, content_tail)
+                        delta_updates["content"] = safe or None
+
+                    if choice.delta.tool_calls:
+                        new_tcs = []
+                        for tc in choice.delta.tool_calls:
+                            if tc.function and tc.function.arguments:
+                                idx = tc.index if tc.index is not None else 0
+                                prev = tool_arg_tails.get(idx, "")
+                                safe_args, new_tail = anon_map.restore_chunk(tc.function.arguments, prev)
+                                tool_arg_tails[idx] = new_tail
+                                new_tcs.append(
+                                    tc.model_copy(
+                                        update={
+                                            "function": tc.function.model_copy(update={"arguments": safe_args or None})
+                                        }
+                                    )
+                                )
+                            else:
+                                new_tcs.append(tc)
+                        delta_updates["tool_calls"] = new_tcs
+
+                    if delta_updates:
                         new_choices.append(
-                            choice.model_copy(
-                                update={"delta": choice.delta.model_copy(update={"content": safe or None})}
-                            )
+                            choice.model_copy(update={"delta": choice.delta.model_copy(update=delta_updates)})
                         )
                     else:
                         new_choices.append(choice)
@@ -310,8 +334,8 @@ async def _openai_stream_gen(
             with contextlib.suppress(Exception):
                 await aclose()
 
-    if tail:
-        restored = anon_map.restore(tail)
+    if content_tail:
+        restored = anon_map.restore(content_tail)
         if restored:
             flush = {
                 "id": f"novisentinel-{int(time.time())}",
@@ -321,6 +345,33 @@ async def _openai_stream_gen(
                 "choices": [{"index": 0, "delta": {"content": restored}, "finish_reason": None}],
             }
             yield _sse(json.dumps(flush))
+
+    for idx, residual in tool_arg_tails.items():
+        if residual:
+            restored_args = anon_map.restore(residual)
+            if restored_args:
+                flush_tc = {
+                    "id": f"novisentinel-{int(time.time())}",
+                    "object": "chat.completion.chunk",
+                    "created": int(time.time()),
+                    "model": request.model,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "delta": {
+                                "tool_calls": [
+                                    ToolCall(
+                                        index=idx,
+                                        function=FunctionCall(arguments=restored_args),
+                                    ).model_dump(exclude_none=True)
+                                ]
+                            },
+                            "finish_reason": None,
+                        }
+                    ],
+                }
+                yield _sse(json.dumps(flush_tc))
+
     yield _sse("[DONE]")
 
 
