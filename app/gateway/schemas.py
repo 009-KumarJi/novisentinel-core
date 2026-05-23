@@ -18,13 +18,16 @@ class ContentPart(BaseModel):
 
 
 class FunctionCall(BaseModel):
-    name: str
-    arguments: str
+    model_config = ConfigDict(extra="allow")
+    name: str | None = None
+    arguments: str | None = None
 
 
 class ToolCall(BaseModel):
-    id: str
-    type: Literal["function"] = "function"
+    model_config = ConfigDict(extra="allow")
+    index: int | None = None
+    id: str | None = None
+    type: Literal["function"] | None = "function"
     function: FunctionCall
 
 

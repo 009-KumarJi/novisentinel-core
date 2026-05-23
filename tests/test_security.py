@@ -176,13 +176,13 @@ async def test_correct_bearer_accepted_when_auth_required():
 
 @pytest.mark.asyncio
 async def test_byok_bypasses_master_key_check():
-    """When the caller supplies a provider key (x-api-key), they pay for
-    upstream calls themselves — we don't need to gate it on the master key."""
+    """When the caller supplies a provider key (x-api-key) and X-Use-BYOK,
+    they pay for upstream calls themselves — gateway auth is not enforced."""
     app = _make_app()
     captured: list = []
 
     async def _capture(req, api_key=""):
-        captured.append(req)
+        captured.append(api_key)
         return _fake_response("ok")
 
     with (
@@ -193,7 +193,7 @@ async def test_byok_bypasses_master_key_check():
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             resp = await c.post(
                 "/v1/messages",
-                headers={"x-api-key": "sk-ant-caller-byok"},
+                headers={"x-api-key": "sk-ant-caller-byok", "X-Use-BYOK": "true"},
                 json={
                     "model": "claude-3-5-sonnet-20241022",
                     "max_tokens": 100,
@@ -201,6 +201,150 @@ async def test_byok_bypasses_master_key_check():
                 },
             )
     assert resp.status_code == 200
+    assert captured and captured[0] == "sk-ant-caller-byok"
+
+
+# ── X-Use-BYOK key selection ─────────────────────────────────────────────────
+
+
+@pytest.mark.asyncio
+async def test_byok_default_uses_env_key_openai():
+    """Without X-Use-BYOK, env key is forwarded upstream even if bearer is present."""
+    app = _make_app()
+    captured_keys: list = []
+
+    async def _capture(req, api_key=""):
+        captured_keys.append(api_key)
+        return _fake_response("ok")
+
+    with (
+        patch.object(settings, "openai_api_key", "env-openai-secret"),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(side_effect=_capture)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(
+                "/v1/chat/completions",
+                headers={"Authorization": "Bearer caller-bearer"},
+                json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]},
+            )
+    assert resp.status_code == 200
+    assert captured_keys and captured_keys[0] == "env-openai-secret"
+
+
+@pytest.mark.asyncio
+async def test_byok_opt_in_uses_bearer_openai():
+    """With X-Use-BYOK: true, the caller's bearer is forwarded upstream."""
+    app = _make_app()
+    captured_keys: list = []
+
+    async def _capture(req, api_key=""):
+        captured_keys.append(api_key)
+        return _fake_response("ok")
+
+    with (
+        patch.object(settings, "openai_api_key", "env-openai-secret"),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(side_effect=_capture)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(
+                "/v1/chat/completions",
+                headers={"Authorization": "Bearer caller-bearer", "X-Use-BYOK": "true"},
+                json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]},
+            )
+    assert resp.status_code == 200
+    assert captured_keys and captured_keys[0] == "caller-bearer"
+
+
+@pytest.mark.asyncio
+async def test_byok_opt_in_without_key_returns_400_openai():
+    """X-Use-BYOK: true with no Authorization returns 400."""
+    app = _make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        resp = await c.post(
+            "/v1/chat/completions",
+            headers={"X-Use-BYOK": "true"},
+            json={"model": "gpt-4o", "messages": [{"role": "user", "content": "hello"}]},
+        )
+    assert resp.status_code == 400
+    err = resp.json()["detail"]["error"]
+    assert err["type"] == "invalid_request"
+    assert "X-Use-BYOK" in err["message"]
+
+
+@pytest.mark.asyncio
+async def test_byok_default_uses_env_key_anthropic():
+    """Without X-Use-BYOK, env key is used for /v1/messages even if x-api-key is present."""
+    app = _make_app()
+    captured_keys: list = []
+
+    async def _capture(req, api_key=""):
+        captured_keys.append(api_key)
+        return _fake_response("ok", model="claude-3-5-sonnet-20241022")
+
+    with (
+        patch.object(settings, "anthropic_api_key", "env-anthropic-secret"),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(side_effect=_capture)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(
+                "/v1/messages",
+                headers={"x-api-key": "caller-x-api-key"},
+                json={
+                    "model": "claude-3-5-sonnet-20241022",
+                    "max_tokens": 100,
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+            )
+    assert resp.status_code == 200
+    assert captured_keys and captured_keys[0] == "env-anthropic-secret"
+
+
+@pytest.mark.asyncio
+async def test_byok_opt_in_uses_bearer_anthropic():
+    """With X-Use-BYOK: true, the caller's x-api-key is forwarded for /v1/messages."""
+    app = _make_app()
+    captured_keys: list = []
+
+    async def _capture(req, api_key=""):
+        captured_keys.append(api_key)
+        return _fake_response("ok", model="claude-3-5-sonnet-20241022")
+
+    with (
+        patch.object(settings, "anthropic_api_key", "env-anthropic-secret"),
+        patch("app.gateway.orchestrator.call_provider_only", new=AsyncMock(side_effect=_capture)),
+    ):
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            resp = await c.post(
+                "/v1/messages",
+                headers={"x-api-key": "caller-x-api-key", "X-Use-BYOK": "true"},
+                json={
+                    "model": "claude-3-5-sonnet-20241022",
+                    "max_tokens": 100,
+                    "messages": [{"role": "user", "content": "hello"}],
+                },
+            )
+    assert resp.status_code == 200
+    assert captured_keys and captured_keys[0] == "caller-x-api-key"
+
+
+@pytest.mark.asyncio
+async def test_byok_opt_in_without_key_returns_400_anthropic():
+    """X-Use-BYOK: true with no x-api-key or Authorization returns 400 for /v1/messages."""
+    app = _make_app()
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+        resp = await c.post(
+            "/v1/messages",
+            headers={"X-Use-BYOK": "true"},
+            json={
+                "model": "claude-3-5-sonnet-20241022",
+                "max_tokens": 100,
+                "messages": [{"role": "user", "content": "hello"}],
+            },
+        )
+    assert resp.status_code == 400
+    err = resp.json()["detail"]["error"]
+    assert err["type"] == "invalid_request"
+    assert "X-Use-BYOK" in err["message"]
 
 
 # ── M8: body-size limit ──────────────────────────────────────────────────────

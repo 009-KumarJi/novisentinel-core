@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -47,6 +49,24 @@ class Settings(BaseSettings):
 
     # Hard cap on request body bytes (DoS guard). Default 2 MiB.
     max_request_bytes: int = Field(default=2 * 1024 * 1024, ge=1024)
+
+    # ── Tool-surface scanning ────────────────────────────────────────────────
+    # When true, tool definition descriptions are also scanned for PII/secrets.
+    # Off by default: function.parameters JSON schema field names ("email",
+    # "phone_number") cause heavy Presidio false-positives.
+    scan_tool_defs: bool = Field(default=False, description="Scan tool definition descriptions for PII/secrets")
+
+    # ── Session persistence ──────────────────────────────────────────────────
+    session_dir: Path = Field(
+        default_factory=lambda: Path.home() / ".novisentinel" / "sessions",
+        description="Directory for disk-persisted anonymization map sessions",
+    )
+    session_ttl_hours: int = Field(
+        default=24,
+        ge=1,
+        le=24 * 30,
+        description="Session TTL in hours; files older than this are evicted",
+    )
 
     @field_validator("cors_origins", mode="before")
     @classmethod
