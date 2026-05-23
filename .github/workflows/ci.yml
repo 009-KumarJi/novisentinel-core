@@ -65,6 +65,21 @@ jobs:
           name: coverage
           path: coverage.xml
 
+  branch-policy:
+    name: Branch policy
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && github.event.pull_request.base.ref == 'main'
+
+    steps:
+      - name: Only develop may target main
+        run: |
+          if [ "${{ github.event.pull_request.head.ref }}" != "develop" ]; then
+            echo "ERROR: PRs to main must come from the develop branch."
+            echo "       Head branch is '${{ github.event.pull_request.head.ref }}'."
+            echo "       Merge your changes into develop first, then open a PR from develop → main."
+            exit 1
+          fi
+
   lint:
     name: Lint
     runs-on: ubuntu-latest
